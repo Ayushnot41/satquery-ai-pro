@@ -230,7 +230,8 @@ def run_siamese_inference(
             model = SiameseUNet(in_channels=3, out_channels=1).to(dev)
             checkpoint = torch.load(__import__('os').environ['VERIFIED_SIAMESE_CHECKPOINT'], map_location=dev, weights_only=True)
             state = checkpoint.get('state_dict', checkpoint)
-            model.load_state_dict(state, strict=True)
+            # This guarded branch uses torch.nn.Module, not the CPU-only fallback class.
+            model.load_state_dict(state, strict=True)  # pylint: disable=no-member
             model.eval()
 
             t1_tensor = t1_tensor.to(dev)

@@ -107,3 +107,9 @@ untouched for recovery if the D: repository becomes available again.
 Restarted preview URL: https://frozen-protecting-listings-amber.trycloudflare.com
 External browser access now succeeds; the earlier approval quota issue cleared.
 Final build passed after SAR asset routing, keyboard controls, and job-mode fixes.
+
+Published private source snapshot 5e5d2a0 to Ayushnot41/satquery-ai-pro.
+Pro quality CI passed, including PostgreSQL integration, backend tests, preservation,
+frontend build, and production npm audit. Live HTTPS optical/SAR investigation
+completed with all images loaded and no browser console errors. A narrow pylint
+annotation corrects optional-torch static inference; runtime behavior unchanged.

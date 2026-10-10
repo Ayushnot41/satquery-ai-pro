@@ -40,8 +40,8 @@ was verified locally and captured in `preview-verified.jpg`.
 
 The restarted HTTPS URL was opened successfully in the browser, with an
 active demo workspace and no console errors. The earlier automatic-review
-usage-limit failure no longer blocks browser access. Final workflow confirmation
-is recorded below. This link depends on the workstation and tunnel remaining
+usage-limit failure no longer blocks browser access. The optical/SAR workflow completed over HTTPS; all five report images loaded,
+keyboard workflow selection worked, and the browser console contained no errors. This link depends on the workstation and tunnel remaining
 running; it is not permanent production hosting. `.runtime/preview-url.txt`
 contains the current URL after any restart.
 
@@ -62,7 +62,9 @@ found in the staged source scan.
   HTTP 403 for both identity and account verification. No deployment was made to
   that unverified account. No other supported Python hosting credential was found.
 - Local Docker engine is unavailable. PostgreSQL integration is included in
-  `pro-quality.yml` via `scripts/verify_postgres.py`; its CI result must be checked.
+  `pro-quality.yml` via `scripts/verify_postgres.py` passed in GitHub Actions on
+  commit `5e5d2a0`, including PostgreSQL startup, ownership, persistence, and worker
+  completion. The frontend build and production audit also passed remotely.
   Local SQLite concurrency, ownership, cancellation, and persistence tests pass.
 - Real uploaded-image inference requires a configured and verified gateway or
   vLLM provider. No external vision-provider call was tested with real credentials.
@@ -77,3 +79,15 @@ found in the staged source scan.
   confidence, actual government access, or zero-defect claim is made.
 
 See `../PRO_README.md` for startup, shutdown, configuration, backup, and deployment.
+
+## Published source and CI
+
+Private repository: https://github.com/Ayushnot41/satquery-ai-pro
+
+The Pro quality workflow passed on the published source snapshot:
+https://github.com/Ayushnot41/satquery-ai-pro/actions/runs/38058644357
+
+The original lint job reported one false positive: it inferred the optional
+CPU fallback class inside a branch guarded by TORCH_AVAILABLE. A line-scoped
+annotation documents the torch.nn.Module-only call; runtime behavior is unchanged.
+The follow-up lint result is checked after publication.
