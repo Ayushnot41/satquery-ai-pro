@@ -1,8 +1,17 @@
-# Temporary, sample-only HTTPS preview. Requires the official cloudflared CLI.
+# Temporary HTTPS hosting on this computer. -Accounts enables configured sign-in.
+param([switch]$Accounts)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $runtimeDir = Join-Path $projectRoot '.runtime'
-$previewDir = Join-Path $runtimeDir 'public-preview'
+$previewDir = Join-Path $runtimeDir $(if ($Accounts) { 'public-accounts' } else { 'public-preview' })
+if ($Accounts) {
+    $pythonExe = Join-Path $projectRoot '.venv/Scripts/python.exe'
+    Push-Location (Join-Path $projectRoot 'backend')
+    try {
+        & $pythonExe -c "from app.core.config import settings; from app.core.sms import sms_configured; raise SystemExit(0 if settings.google_client_id or sms_configured() else 2)"
+        if ($LASTEXITCODE -ne 0) { throw 'Configure GOOGLE_CLIENT_ID or Twilio Verify in backend/.env first. See docs/AUTHENTICATION_SETUP.md.' }
+    } finally { Pop-Location }
+}
 $cloudflared = (Get-Command cloudflared -ErrorAction Stop).Source
 New-Item -ItemType Directory -Path $previewDir -Force | Out-Null
 & (Join-Path $PSScriptRoot 'stop-pro.ps1')
@@ -24,9 +33,9 @@ try {
         [Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(48)) | Set-Content -LiteralPath $secretPath
     }
     $configuration = @{
-        ENVIRONMENT='preview'; COOKIE_SECURE='true'; CORS_ORIGINS=$previewUrl
+        ENVIRONMENT=$(if ($Accounts) { 'production' } else { 'preview' }); COOKIE_SECURE='true'; CORS_ORIGINS=$previewUrl
         AUTH_PEPPER=(Get-Content -LiteralPath $secretPath -Raw).Trim()
-        ALLOW_DEMO_GUEST='true'; DEVELOPMENT_VERIFICATION_CODES='false'; DEMO_MODE='true'; VLM_BACKEND='demo'
+        ALLOW_DEMO_GUEST=$(if ($Accounts) { 'false' } else { 'true' }); DEVELOPMENT_VERIFICATION_CODES='false'; DEMO_MODE='true'; VLM_BACKEND='demo'
         DATABASE_URL=('sqlite:///' + (Join-Path $previewDir 'preview.db').Replace('\','/'))
         UPLOAD_DIR=(Join-Path $previewDir 'uploads')
     }
@@ -36,7 +45,8 @@ try {
     }
     & (Join-Path $PSScriptRoot 'start-pro.ps1') -Production
     $previewUrl | Set-Content -LiteralPath (Join-Path $runtimeDir 'preview-url.txt')
-    Write-Output "Temporary sample-only preview: $previewUrl"
+    Write-Output "Temporary website: $previewUrl"
+    if ($Accounts) { Write-Output 'Add this exact HTTPS origin to your Google client before signing in. Real SMS uses your configured Twilio billing.' }
     Write-Output 'The link requires this computer, app services, and tunnel to remain running. It is not permanent hosting.'
 } catch {
     if ($tunnel -and -not $tunnel.HasExited) { $tunnel.Kill($true) }

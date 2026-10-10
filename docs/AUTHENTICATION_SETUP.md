@@ -91,7 +91,15 @@ Your computer can host the app while Cloudflare supplies a temporary public HTTP
 
 The script starts the frontend, API, database access, worker, and tunnel in the background. Read the current link from `.runtime/preview-url.txt`. Stop with `./scripts/stop-pro.ps1`.
 
-This is a sample-only demonstration: it intentionally does not accept real account creation or uploads. Cloudflare Quick Tunnels have no uptime guarantee and the address changes after a tunnel restart. They are not an always-on production deployment. Official documentation: https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/
+The default command is a sample-only demonstration. To test your configured Google/phone registration over a free HTTPS link, use this instead:
+
+```powershell
+./scripts/start-preview.ps1 -Accounts
+```
+
+This requires the Google or Twilio configuration above. It uses secure production authentication settings, disables guests and local test codes, and stores real test accounts separately in `.runtime/public-accounts`. Add the printed HTTPS origin to your Google client's Authorized JavaScript origins before signing in. Re-add the new origin after any tunnel restart. Follow Google's domain/consent requirements; registration of an arbitrary temporary origin is not guaranteed by this launcher. Twilio is billed normally. Image analysis remains demo mode until you separately configure a real provider.
+
+Cloudflare Quick Tunnels have no uptime guarantee and their address changes after a tunnel restart. The `-Accounts` option is for integration testing; it does not turn Quick Tunnels into supported production hosting. Official documentation: https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/
 
 For real accounts on a public website, use a stable HTTPS origin with your provider registrations and production settings (`ENVIRONMENT=production`, secure cookies, a strong persistent AUTH_PEPPER, explicit HTTPS CORS origin, no guest sessions, no development codes). A free hosting plan must support this project's Python backend, persistent database, shared image storage, and background worker; static website hosting alone cannot host the complete project. No permanent free account-enabled host is configured here.
 
