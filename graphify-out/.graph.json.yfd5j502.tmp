@@ -1,0 +1,274 @@
+{
+  "directed": false,
+  "multigraph": false,
+  "graph": {},
+  "nodes": [
+    {
+      "id": "RS_VQA",
+      "label": "RS_VQA",
+      "community": 0,
+      "file": "backend/app/agents/vqa_agent.py",
+      "norm_label": "rs_vqa",
+      "role": "Vision-Language Grounding",
+      "type": "agent"
+    },
+    {
+      "id": "OmniRoute_Gateway",
+      "label": "OmniRoute_Gateway",
+      "community": 0,
+      "file": "http://localhost:20128/v1",
+      "norm_label": "omniroute_gateway",
+      "role": "Multi-Provider Router",
+      "type": "gateway"
+    },
+    {
+      "id": "FreeLLMAPI_Gateway",
+      "label": "FreeLLMAPI_Gateway",
+      "community": 0,
+      "file": "http://localhost:3001/v1",
+      "norm_label": "freellmapi_gateway",
+      "role": "7.4B Token Fusion Pool",
+      "type": "gateway"
+    },
+    {
+      "id": "BigEarthNet_Pipeline",
+      "label": "BigEarthNet_Pipeline",
+      "community": 0,
+      "file": "pipeline/bigearthnet/manifest.py",
+      "norm_label": "bigearthnet_pipeline",
+      "role": "Spatial Partitioning Generator",
+      "type": "data"
+    },
+    {
+      "id": "ChangeDetection",
+      "label": "ChangeDetection",
+      "community": 1,
+      "file": "backend/app/agents/change_detection.py",
+      "norm_label": "changedetection",
+      "role": "Bi-Temporal Differencing",
+      "type": "agent"
+    },
+    {
+      "id": "EvidenceFusion",
+      "label": "EvidenceFusion",
+      "community": 1,
+      "file": "backend/app/agents/evidence_fusion.py",
+      "norm_label": "evidencefusion",
+      "role": "Cross-Sensor Synthesizer",
+      "type": "agent"
+    },
+    {
+      "id": "VisualGrounding",
+      "label": "VisualGrounding",
+      "community": 1,
+      "file": "backend/app/agents/visual_grounding.py",
+      "norm_label": "visualgrounding",
+      "role": "Bounding Polygon Extractor",
+      "type": "agent"
+    },
+    {
+      "id": "SAR_Processor",
+      "label": "SAR_Processor",
+      "community": 1,
+      "file": "backend/app/geospatial/sar.py",
+      "norm_label": "sar_processor",
+      "role": "Lee Filter & Decibel Calibration",
+      "type": "physics"
+    },
+    {
+      "id": "InputValidation",
+      "label": "InputValidation",
+      "community": 2,
+      "file": "backend/app/agents/input_validation.py",
+      "norm_label": "inputvalidation",
+      "role": "CRS & Bounds Alignment",
+      "type": "agent"
+    },
+    {
+      "id": "Orchestrator",
+      "label": "Orchestrator",
+      "community": 2,
+      "file": "backend/app/agents/orchestrator.py",
+      "norm_label": "orchestrator",
+      "role": "Multi-Agent Pipeline Coordinator",
+      "type": "coordinator"
+    },
+    {
+      "id": "QueryPlanner",
+      "label": "QueryPlanner",
+      "community": 2,
+      "file": "backend/app/agents/query_planner.py",
+      "norm_label": "queryplanner",
+      "role": "Investigation Intent Classifier",
+      "type": "agent"
+    },
+    {
+      "id": "SensorRouter",
+      "label": "SensorRouter",
+      "community": 2,
+      "file": "backend/app/agents/sensor_router.py",
+      "norm_label": "sensorrouter",
+      "role": "Optical vs SAR Dispatch",
+      "type": "agent"
+    },
+    {
+      "id": "FastAPI_Main",
+      "label": "FastAPI_Main",
+      "community": 3,
+      "file": "backend/app/main.py",
+      "norm_label": "fastapi_main",
+      "role": "REST Gateway",
+      "type": "api"
+    },
+    {
+      "id": "InvestigationWorkspace",
+      "label": "InvestigationWorkspace",
+      "community": 3,
+      "file": "frontend/src/components/screens/InvestigationWorkspace.tsx",
+      "norm_label": "investigationworkspace",
+      "role": "Next.js UI Workspace",
+      "type": "ui"
+    },
+    {
+      "id": "MissionView",
+      "label": "MissionView",
+      "community": 3,
+      "file": "frontend/src/components/screens/MissionView.tsx",
+      "norm_label": "missionview",
+      "role": "3D Spatial Orbit HUD",
+      "type": "ui"
+    },
+    {
+      "id": "AuditTrace",
+      "label": "AuditTrace",
+      "community": 4,
+      "file": "backend/app/agents/audit_trace.py",
+      "norm_label": "audittrace",
+      "role": "Observable Compliance Trace",
+      "type": "agent"
+    },
+    {
+      "id": "ConfidenceAgent",
+      "label": "ConfidenceAgent",
+      "community": 4,
+      "file": "backend/app/agents/confidence_agent.py",
+      "norm_label": "confidenceagent",
+      "role": "Empirical Reliability Assessor",
+      "type": "agent"
+    }
+  ],
+  "links": [
+    {
+      "source": "AuditTrace",
+      "target": "Orchestrator",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "ChangeDetection",
+      "target": "EvidenceFusion",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "ChangeDetection",
+      "target": "VisualGrounding",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "ConfidenceAgent",
+      "target": "AuditTrace",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "EvidenceFusion",
+      "target": "ConfidenceAgent",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "EvidenceFusion",
+      "target": "SAR_Processor",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "FastAPI_Main",
+      "target": "InvestigationWorkspace",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "FastAPI_Main",
+      "target": "MissionView",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "InputValidation",
+      "target": "Orchestrator",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "InputValidation",
+      "target": "SensorRouter",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "Orchestrator",
+      "target": "FastAPI_Main",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "QueryPlanner",
+      "target": "Orchestrator",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "QueryPlanner",
+      "target": "SensorRouter",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "RS_VQA",
+      "target": "BigEarthNet_Pipeline",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "RS_VQA",
+      "target": "EvidenceFusion",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "RS_VQA",
+      "target": "FreeLLMAPI_Gateway",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "RS_VQA",
+      "target": "OmniRoute_Gateway",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "SensorRouter",
+      "target": "ChangeDetection",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "SensorRouter",
+      "target": "Orchestrator",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "SensorRouter",
+      "target": "RS_VQA",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "SensorRouter",
+      "target": "SAR_Processor",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "VisualGrounding",
+      "target": "EvidenceFusion",
+      "confidence_score": 1.0
+    }
+  ],
+  "hyperedges": [],
+  "built_at_commit": "fb9b047bb4ebd1a80d7811bd3862fe2a3fd7f645"
+}

@@ -1,0 +1,2 @@
+'use client';
+export default function ErrorPage({reset}:{reset:()=>void}){return <div className="pro-empty" role="alert"><div><h1>This workspace view could not load.</h1><p>Your saved work is still available. Try again, or reload after an update.</p></div><button className="pro-primary" onClick={reset}>Try again</button><button className="pro-secondary" onClick={()=>window.location.reload()}>Reload workspace</button></div>}

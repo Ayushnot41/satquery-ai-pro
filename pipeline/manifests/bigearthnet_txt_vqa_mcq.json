@@ -1,0 +1,19 @@
+[
+  {
+    "id": "ben-test-0004",
+    "patch_id": "S2A_MSIL2A_20170613T101031_N0205_R022_T33UVP_12_23",
+    "s1_name": "S1A_IW_GRDH_1SDV_20170613T164820_20170613T164845_017017_01C532",
+    "s2_name": "S2A_MSIL2A_20170613T101031_N0205_R022_T33UVP",
+    "split": "test",
+    "task_category": "vqa_mcq",
+    "prompt": "What is the primary land cover class in this Sentinel-2 patch? A) Industrial unit B) Coniferous forest C) Water course D) Pasture",
+    "target_answer": "B) Coniferous forest",
+    "latitude": 52.341,
+    "longitude": 19.45,
+    "country": "Poland",
+    "season": "Summer",
+    "bounding_box": null,
+    "has_optical": true,
+    "has_sar": true
+  }
+]

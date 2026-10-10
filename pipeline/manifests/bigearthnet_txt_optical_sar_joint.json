@@ -1,0 +1,19 @@
+[
+  {
+    "id": "ben-sar-opt-0003",
+    "patch_id": "S2B_MSIL2A_20171015T100019_N0205_R122_T32UNE_34_55",
+    "s1_name": "S1B_IW_GRDH_1SDV_20171015T053421_20171015T053446_007836_00DCFA",
+    "s2_name": "S2B_MSIL2A_20171015T100019_N0205_R122_T32UNE",
+    "split": "val",
+    "task_category": "optical_sar_joint",
+    "prompt": "Compare the optical vegetation index with SAR backscatter roughness in the central clearing.",
+    "target_answer": "The optical imagery exhibits low NDVI while SAR VV backscatter shows high roughness (-8.2 dB), indicating cleared land with exposed rocky substrate.",
+    "latitude": 48.112,
+    "longitude": 11.581,
+    "country": "Germany",
+    "season": "Autumn",
+    "bounding_box": null,
+    "has_optical": true,
+    "has_sar": true
+  }
+]
