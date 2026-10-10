@@ -34,7 +34,7 @@ export function InvestigationWorkspace({
   const pdfTemplateRef = React.useRef<HTMLDivElement>(null);
 
   const exportToPDF = async () => {
-    if (!pdfTemplateRef.current) return;
+    if (!pdfTemplateRef.current || !investigation) return;
     setIsExportingPdf(true);
     try {
       const canvas = await html2canvas(pdfTemplateRef.current, {
@@ -53,7 +53,12 @@ export function InvestigationWorkspace({
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
+      const pageHeight = pdf.internal.pageSize.getHeight();
       pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      for (let offset = pageHeight; offset < pdfHeight; offset += pageHeight) {
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, -offset, pdfWidth, pdfHeight);
+      }
       const safeLoc = currentLocation.name.replace(/[^a-zA-Z0-9_-]/g, "_");
       pdf.save(`BHUVISION_Surveillance_Cockpit_Report_${safeLoc}_${Date.now()}.pdf`);
     } catch (err) {
@@ -65,61 +70,16 @@ export function InvestigationWorkspace({
   };
 
   const exportDataToJson = () => {
+    if (!investigation) return;
     setIsExportingData(true);
     try {
       const dataPayload = {
-        system: "BHUVISION (SIH26167) // Surveillance Cockpit",
-        classification: "RESTRICTED // LAWFUL TACTICAL SURVEILLANCE",
-        dossier_id: investigation?.investigation_id || `REC-${Date.now().toString(16).toUpperCase()}`,
+        system: "Satquery AI Pro",
         exported_at: new Date().toISOString(),
-        target_sector: {
-          name: currentLocation.name,
-          latitude: currentLocation.lat,
-          longitude: currentLocation.lon,
-          zoom: currentLocation.zoom,
-          crs: "EPSG:4326 (WGS84)",
-        },
-        query: {
-          input_question: query,
-          task_plan: investigation?.plan || {
-            task_type: "change_detection",
-            requires_sar: true,
-            requires_temporal: true,
-          },
-        },
-        findings: {
-          verdict: investigation?.answer || "Baseline surveillance telemetry acquired.",
-          status: investigation?.status || "baseline_standby",
-          confidence_score: investigation?.confidence?.confidence_score ?? 0.89,
-          confidence_tier: investigation?.confidence?.overall_confidence ?? "high",
-          uncertainties: investigation?.confidence?.uncertainties ?? [],
-        },
-        sensor_telemetry: {
-          sensor_decision: investigation?.sensor_decision || {
-            decision: "optical_and_sar",
-            reason: "Dual-modal sensor synthesis for structural and backscatter validation",
-          },
-          radar_backscatter_sigma0_db: {
-            water_inundation_db: -23.4,
-            wet_soil_db: -15.8,
-            canopy_vegetation_db: -11.2,
-            urban_structures_db: -4.1,
-          },
-          lee_filter_window: "5x5",
-          carrier_frequency_ghz: 5.405,
-        },
-        visual_overlays: investigation?.visual_overlays || [],
-        agent_council_trace: investigation?.trace?.events || [
-          { agent_name: "Agent 1: Query Planner", status: "complete", duration_ms: 95 },
-          { agent_name: "Agent 2: Geo Validator", status: "complete", duration_ms: 32 },
-          { agent_name: "Agent 3: Optical Specialist", status: "complete", duration_ms: 410 },
-          { agent_name: "Agent 4: SAR Specialist", status: "complete", duration_ms: 680 },
-          { agent_name: "Agent 5: Siamese U-Net", status: "complete", duration_ms: 290 },
-          { agent_name: "Agent 6: Grounding Engine", status: "complete", duration_ms: 85 },
-          { agent_name: "Agent 7: Spatial Verifier", status: "complete", duration_ms: 45 },
-          { agent_name: "Agent 8: Confidence Auditor", status: "complete", duration_ms: 60 },
-          { agent_name: "Agent 9: Report Synthesizer", status: "complete", duration_ms: 110 },
-        ],
+        view_context: { ...currentLocation, note: "Map viewport; not inferred image geolocation." },
+        provenance: investigation.provenance,
+        investigation,
+        warning: "Model outputs require independent review. Simulation data is illustrative.",
       };
 
       const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dataPayload, null, 2));
@@ -250,7 +210,7 @@ export function InvestigationWorkspace({
           <div className="flex items-center gap-2.5 self-stretch md:self-auto">
             <button
               onClick={exportToPDF}
-              disabled={isExportingPdf}
+              disabled={isExportingPdf || !investigation}
               title="Generate and download high-resolution intelligence dossier PDF"
               className="flex-1 md:flex-initial px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white font-bold text-xs rounded-lg shadow-lg shadow-emerald-950/50 border border-emerald-400/40 transition-all flex items-center justify-center gap-2 font-mono uppercase tracking-wider cursor-pointer"
             >
@@ -275,7 +235,7 @@ export function InvestigationWorkspace({
 
             <button
               onClick={exportDataToJson}
-              disabled={isExportingData}
+              disabled={isExportingData || !investigation}
               title="Download raw sensor telemetry, target coordinates, and findings in structured JSON"
               className="flex-1 md:flex-initial px-4 py-2 bg-[#111C30] hover:bg-[#162744] text-cyan-300 hover:text-white font-bold text-xs rounded-lg border border-cyan-500/40 shadow-sm transition-all flex items-center justify-center gap-2 font-mono uppercase tracking-wider cursor-pointer"
             >
@@ -424,7 +384,7 @@ export function InvestigationWorkspace({
         <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
           <button
             onClick={exportToPDF}
-            disabled={isExportingPdf}
+            disabled={isExportingPdf || !investigation}
             className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/20 border border-emerald-400/30 transition-all flex items-center gap-2 font-mono uppercase tracking-wider cursor-pointer"
           >
             {isExportingPdf ? (
@@ -448,7 +408,7 @@ export function InvestigationWorkspace({
 
           <button
             onClick={exportDataToJson}
-            disabled={isExportingData}
+            disabled={isExportingData || !investigation}
             className="px-5 py-2.5 bg-[#111C30] hover:bg-[#162744] text-cyan-300 hover:text-white font-bold text-xs rounded-xl border border-cyan-500/40 shadow-sm transition-all flex items-center gap-2 font-mono uppercase tracking-wider cursor-pointer"
           >
             {isExportingData ? (

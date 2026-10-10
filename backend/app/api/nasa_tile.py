@@ -63,85 +63,29 @@ async def proxy_nasa_gibs_tile(
     if layer not in VALID_LAYERS:
         raise HTTPException(status_code=400, detail=f"Invalid layer. Valid options: {sorted(VALID_LAYERS)}")
 
-    # Clamp zoom to layer maximum
-    max_z = LAYER_MAX_ZOOM.get(layer, 9)
-    z_clamped = min(z, max_z)
-    matrix_set = f"GoogleMapsCompatible_Level{max_z}"
-
-    # Build GIBS WMTS tile URL (EPSG:3857 uses GoogleMapsCompatible_Level{max_z})
-    tile_url = f"{GIBS_BASE}/{layer}/default/{date}/{matrix_set}/{z_clamped}/{y}/{x}.jpg"
-
-    # Build request headers — inject NASA Earthdata JWT token if configured
-    headers: dict[str, str] = {
-        "User-Agent": "BHUVISION/1.0 (SIH26167; ISRO; Team BANKAI)",
-        "Accept": "image/jpeg,image/*;q=0.9,*/*;q=0.5",
-    }
-    if settings.nasa_earthdata_token:
-        headers["Authorization"] = f"Bearer {settings.nasa_earthdata_token}"
-        logger.debug("nasa_tile_auth", layer=layer, date=date, z=z_clamped, y=y, x=x)
-    else:
-        logger.warning("nasa_tile_no_auth", message="NASA_EARTHDATA_TOKEN not configured, using public endpoint")
-
+    from datetime import date as CalendarDate
     try:
-        async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
-            resp = await client.get(tile_url, headers=headers)
-
-            if resp.status_code == 200:
-                return Response(
-                    content=resp.content,
-                    media_type="image/jpeg",
-                    headers={
-                        "Cache-Control": "public, max-age=86400",  # Cache tiles for 24h
-                        "X-NASA-Layer": layer,
-                        "X-Tile-Date": date,
-                        "X-Auth": "bearer" if settings.nasa_earthdata_token else "public",
-                    }
-                )
-            elif resp.status_code in (400, 404):
-                # GIBS near-real-time tiles can lag by 1-2 days — try yesterday and 2-days-prior
-                from datetime import datetime, timedelta, timezone
-                now_utc = datetime.now(timezone.utc)
-                for day_offset in [1, 2, 3]:
-                    fallback_date = (now_utc - timedelta(days=day_offset)).strftime("%Y-%m-%d")
-                    fallback_url = f"{GIBS_BASE}/{layer}/default/{fallback_date}/{matrix_set}/{z_clamped}/{y}/{x}.jpg"
-                    resp_fallback = await client.get(fallback_url, headers=headers)
-                    if resp_fallback.status_code == 200:
-                        return Response(
-                            content=resp_fallback.content,
-                            media_type="image/jpeg",
-                            headers={"Cache-Control": "public, max-age=3600", "X-Fallback-Date": fallback_date},
-                        )
-
-            # Ultimate fallback to ESRI World Imagery if NASA layer is temporarily unreachable
-            esri_url = f"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            esri_resp = await client.get(esri_url)
-            if esri_resp.status_code == 200:
-                return Response(
-                    content=esri_resp.content,
-                    media_type="image/jpeg",
-                    headers={"Cache-Control": "public, max-age=86400", "X-Fallback-Source": "esri-world-imagery"},
-                )
-
-            raise HTTPException(status_code=resp.status_code, detail=f"GIBS returned: {resp.status_code}")
-
+        CalendarDate.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(422, 'Invalid date; use YYYY-MM-DD')
+    max_z = LAYER_MAX_ZOOM[layer]
+    if z > max_z or x >= 2**z or y >= 2**z:
+        raise HTTPException(422, f'Tile coordinates exceed this layer grid (maximum zoom {max_z})')
+    tile_url = f'{GIBS_BASE}/{layer}/default/{date}/GoogleMapsCompatible_Level{max_z}/{z}/{y}/{x}.jpg'
+    headers = {'User-Agent': 'Satquery-AI-Pro/1.0'}
+    if settings.nasa_earthdata_token:
+        headers['Authorization'] = f'Bearer {settings.nasa_earthdata_token}'
+    try:
+        async with httpx.AsyncClient(timeout=12, follow_redirects=False) as client:
+            response = await client.get(tile_url, headers=headers)
+        if response.status_code != 200 or not response.headers.get('content-type', '').startswith('image/'):
+            raise HTTPException(404 if response.status_code == 404 else 502, 'Requested NASA layer/date is unavailable. No substitute imagery was returned.')
+        return Response(response.content, media_type=response.headers['content-type'], headers={
+            'X-NASA-Layer': layer, 'X-Tile-Date': date, 'X-Data-Source': 'NASA GIBS', 'Cache-Control': 'public, max-age=3600'})
     except httpx.TimeoutException:
-        # Fallback to ESRI on timeout
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                esri_url = f"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                esri_resp = await client.get(esri_url)
-                if esri_resp.status_code == 200:
-                    return Response(
-                        content=esri_resp.content,
-                        media_type="image/jpeg",
-                        headers={"Cache-Control": "public, max-age=86400", "X-Fallback-Source": "esri-world-imagery"},
-                    )
-        except Exception:
-            pass
-        raise HTTPException(status_code=504, detail="NASA GIBS tile request timed out")
-    except httpx.RequestError as exc:
-        logger.error("nasa_tile_error", error=str(exc))
-        raise HTTPException(status_code=502, detail=f"Failed to fetch NASA tile: {exc}")
+        raise HTTPException(504, 'NASA imagery request timed out')
+    except httpx.RequestError:
+        raise HTTPException(502, 'NASA imagery service unavailable')
 
 
 @router.get("/layers")

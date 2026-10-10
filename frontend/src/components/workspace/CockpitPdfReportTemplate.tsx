@@ -35,7 +35,7 @@ export const CockpitPdfReportTemplate = React.forwardRef<
   const confidenceScore =
     investigation?.confidence?.confidence_score != null
       ? Math.round(investigation.confidence.confidence_score * 100)
-      : 89;
+      : null;
 
   // Agent consensus breakdown data
   const agentMetrics = [
@@ -76,7 +76,11 @@ export const CockpitPdfReportTemplate = React.forwardRef<
       }}
       className="cockpit-pdf-print-container"
     >
-      {/* ================= OFFICIAL HEADER & CLASSIFICATION ================= */}
+      <div style={{padding:12, marginBottom:16, border:'1px solid #b45309', background:'#fffbeb', color:'#78350f', fontSize:11, lineHeight:1.5}}>
+        <strong>{investigation?.provenance?.mode === 'simulation' ? 'SIMULATION REPORT' : 'UNVERIFIED MODEL OUTPUT'}</strong><br/>
+        This is a project-generated report, not an official government document. Reference charts and sample task metrics below are illustrative and are not measurements from this investigation. Map coordinates describe the selected viewport, not a verified image location.
+      </div>
+      {/* Report header */}
       <div
         style={{
           borderBottom: "3px solid #1e3a8a",
@@ -103,7 +107,7 @@ export const CockpitPdfReportTemplate = React.forwardRef<
                 fontSize: "14px",
               }}
             >
-              ISRO
+              SQ
             </div>
             <div>
               <h1
@@ -128,7 +132,7 @@ export const CockpitPdfReportTemplate = React.forwardRef<
                   fontWeight: "600",
                 }}
               >
-                Government of India // Ministry of Defence & Space Applications Centre (SAC)
+                Independent project workspace · Original BHUVISION architecture
               </p>
             </div>
           </div>
@@ -150,7 +154,7 @@ export const CockpitPdfReportTemplate = React.forwardRef<
               marginBottom: "4px",
             }}
           >
-            RESTRICTED // SIH26167 TACTICAL
+            UNVERIFIED PROJECT REPORT
           </div>
           <p style={{ margin: "2px 0 0 0", fontFamily: "monospace", fontWeight: "bold" }}>
             {dossierId}
@@ -275,7 +279,7 @@ export const CockpitPdfReportTemplate = React.forwardRef<
                 borderRadius: "3px",
               }}
             >
-              VERIFIED // {confidenceScore}% CONFIDENCE
+              {confidenceScore == null ? 'CONFIDENCE NOT REPORTED' : `MODEL SCORE: ${confidenceScore}% · UNCALIBRATED`}
             </span>
           </div>
           <p style={{ margin: 0, fontSize: "11px", lineHeight: "1.5", color: "#14532d" }}>
@@ -310,7 +314,7 @@ export const CockpitPdfReportTemplate = React.forwardRef<
                   letterSpacing: "0.5px",
                 }}
               >
-                CHART 1.0 // MULTI-SPECTRAL RADAR BACKSCATTER & ATTENUATION PROFILE (σ⁰ dB)
+                REFERENCE 1.0 // ILLUSTRATIVE RADAR VALUES · NOT SCENE MEASUREMENTS
               </span>
               <span style={{ fontSize: "9px", color: "#64748b", marginLeft: "10px" }}>
                 Sentinel-1 C-Band (5.405 GHz) Co-Pol (VV) & Cross-Pol (VH) Calibration
@@ -399,7 +403,7 @@ export const CockpitPdfReportTemplate = React.forwardRef<
                   letterSpacing: "0.5px",
                 }}
               >
-                CHART 2.0 // 9-AGENT PIPELINE CONSENSUS & CONFIDENCE CALIBRATION
+                REFERENCE 2.0 // ORIGINAL DEMO AGENT SCORES · NOT THIS RUN
               </span>
               <span style={{ fontSize: "9px", color: "#64748b", marginLeft: "10px" }}>
                 Empirical threshold benchmark line at 85.0%
@@ -458,7 +462,7 @@ export const CockpitPdfReportTemplate = React.forwardRef<
             paddingBottom: "4px",
           }}
         >
-          SECTION 03: SATELLITE RADAR & OPTICAL TASK METRICS
+          REFERENCE 03: ORIGINAL SAMPLE TASK METRICS · NOT VALIDATED RESULTS
         </div>
 
         <table style={{ width: "100%", fontSize: "10px", borderCollapse: "collapse", border: "1px solid #cbd5e1" }}>
@@ -526,7 +530,7 @@ export const CockpitPdfReportTemplate = React.forwardRef<
       >
         <div>
           <p style={{ margin: 0, fontWeight: "bold", color: "#0f172a" }}>
-            ISRO SPACE TECHNOLOGY // SMART INDIA HACKATHON 2024 (SIH26167)
+            SATQUERY AI PRO // ORIGINAL BHUVISION PROJECT (SIH26167)
           </p>
           <p style={{ margin: "2px 0 0 0" }}>
             Autonomous Multi-Agent Geospatial VQA & Surveillance Architecture • Team BANKAI
@@ -536,9 +540,9 @@ export const CockpitPdfReportTemplate = React.forwardRef<
         <div style={{ textAlign: "right" }}>
           <div style={{ display: "inline-block", borderBottom: "1px solid #94a3b8", width: "140px", marginBottom: "4px" }} />
           <p style={{ margin: 0, fontWeight: "600", color: "#0f172a" }}>
-            AUTHORIZED COMMAND OFFICER
+            INDEPENDENT REVIEW REQUIRED
           </p>
-          <p style={{ margin: "1px 0 0 0", fontSize: "8px" }}>Digitally Verified via SHA-256 Hash</p>
+          <p style={{ margin: "1px 0 0 0", fontSize: "8px" }}>No verified digital signature has been applied</p>
         </div>
       </div>
     </div>

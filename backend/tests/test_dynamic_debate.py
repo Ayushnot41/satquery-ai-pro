@@ -8,6 +8,7 @@ from app.main import app
 @pytest.mark.asyncio
 async def test_dynamic_debate_maritime_karwar():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         res = await client.get("/api/debate?target_location=Karwar Naval Base Coast&scenario=vessel_patrol")
         assert res.status_code == 200
         data = res.json()
@@ -19,6 +20,7 @@ async def test_dynamic_debate_maritime_karwar():
 @pytest.mark.asyncio
 async def test_dynamic_debate_siachen_glacier():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         res = await client.get("/api/debate?target_location=Siachen Glacier Sector&scenario=snow_avalanche")
         assert res.status_code == 200
         data = res.json()
@@ -30,6 +32,7 @@ async def test_dynamic_debate_siachen_glacier():
 @pytest.mark.asyncio
 async def test_dynamic_debate_ambala_airbase():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         res = await client.get("/api/debate?target_location=Ambala Air Force Station&scenario=runway_inspection")
         assert res.status_code == 200
         data = res.json()

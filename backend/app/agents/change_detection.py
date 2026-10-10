@@ -85,6 +85,13 @@ class ChangeDetectionAgent(AgentBase):
 
             # Step 4: Connected component analysis & bounding box extraction
             regions = self._extract_regions(change_mask)
+            # Coordinates belong to the resized comparison grid. Normalize them
+            # before projecting onto either original raster or exporting GeoJSON.
+            for region in regions:
+                x1, y1, x2, y2 = region.bbox
+                region.bbox = [x1 / change_mask.shape[1], y1 / change_mask.shape[0],
+                               x2 / change_mask.shape[1], y2 / change_mask.shape[0]]
+                region.coordinate_space = "normalized"
 
             # Step 5: Compute statistics
             total_pixels = change_mask.shape[0] * change_mask.shape[1]

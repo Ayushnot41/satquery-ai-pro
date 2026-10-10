@@ -77,6 +77,7 @@ export interface VQAResult {
 }
 
 export interface ChangeRegion {
+  coordinate_space?: 'pixel' | 'normalized';
   bbox: [number, number, number, number]; // [xmin, ymin, xmax, ymax]
   geo_bbox?: [number, number, number, number] | null;
   change_type: string;
@@ -127,6 +128,7 @@ export interface ConfidenceReport {
 }
 
 export interface VisualOverlay {
+  coordinate_space?: 'pixel' | 'normalized';
   overlay_type: string;
   coordinates: number[][];
   color: string;
@@ -161,6 +163,7 @@ export interface ExecutionTrace {
 }
 
 export interface InvestigationResponse {
+  provenance?: Record<string, unknown>;
   investigation_id: string;
   status: InvestigationStatus;
   question: string;
@@ -223,6 +226,8 @@ export interface TraceStep {
 }
 
 export interface AnalysisResult {
+  provenance?: Record<string, unknown>;
+  total_duration_ms?: number | null;
   run_id: string;
   created_at: string;
   mode: AnalysisMode;

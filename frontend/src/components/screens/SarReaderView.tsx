@@ -133,7 +133,7 @@ export function SarReaderView() {
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
       pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`SAC-ISRO-SAR-Radar-Dossier-${Date.now()}.pdf`);
+      pdf.save(`Satquery_SAR_Scenario_${Date.now()}.pdf`);
     } catch (err) {
       console.error("SAR PDF export error:", err);
     } finally {
@@ -549,7 +549,7 @@ export function SarReaderView() {
                     <polyline points="14 2 14 8 20 8"></polyline>
                     <line x1="16" y1="13" x2="8" y2="13"></line>
                   </svg>
-                  <span>{isExportingPdf ? "Rendering PDF..." : "Export Official SAR Radar Dossier (PDF)"}</span>
+                  <span>{isExportingPdf ? "Rendering PDF..." : "Export SAR Scenario Report (PDF)"}</span>
                 </button>
 
                 <button

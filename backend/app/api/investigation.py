@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import hashlib
 from datetime import datetime, timezone
 import uuid
 from pathlib import Path
@@ -32,7 +33,8 @@ from ..schemas.investigation import (
 router = APIRouter(prefix="/investigate", tags=["Investigation"])
 
 # Persistent in-memory cache of investigations
-INVESTIGATION_CACHE: dict[str, InvestigationResponse] = {}
+from ..core.database import DurableStore
+INVESTIGATION_CACHE = DurableStore("investigations", InvestigationResponse)
 
 # Active backend selection
 def get_vlm_backend() -> VLMBackend:
@@ -49,24 +51,32 @@ def _get_or_create_demo_image(name: str, sensor: SensorType) -> Path:
     """Generate or retrieve a verified demo image file on disk."""
     demo_dir = Path("./data/demo")
     demo_dir.mkdir(parents=True, exist_ok=True)
+    import re
+    if not re.fullmatch(r'demo-[a-zA-Z0-9_-]{1,100}', name):
+        raise HTTPException(404, 'Image not found in this workspace')
+    # Use the same preserved image displayed by the UI when this sample exists.
+    sample = Path(__file__).resolve().parents[3] / 'assets' / f'{name}.png'
+    if sample.is_file():
+        return sample
     file_path = demo_dir / f"{name}.png"
     if not file_path.exists():
+        rng = np.random.default_rng(int.from_bytes(hashlib.sha256(name.encode()).digest()[:8], 'big'))
         # Create a synthetic 512x512 satellite texture
         if sensor == SensorType.SAR:
             # Grainy radar speckle texture
-            noise = np.random.gamma(shape=2.0, scale=30.0, size=(512, 512)).astype(np.uint8)
+            noise = rng.gamma(shape=2.0, scale=30.0, size=(512, 512)).astype(np.uint8)
             # Add a dark specular water curve
             y, x = np.ogrid[:512, :512]
             river_mask = (y - 0.5 * x - 100 > -30) & (y - 0.5 * x - 100 < 30)
-            noise[river_mask] = np.random.normal(loc=15, scale=5, size=np.sum(river_mask)).clip(0, 255).astype(np.uint8)
+            noise[river_mask] = rng.normal(loc=15, scale=5, size=np.sum(river_mask)).clip(0, 255).astype(np.uint8)
             img = Image.fromarray(noise)
         else:
             # Optical RGB composite with terrain and urban textures
             rgb = np.zeros((512, 512, 3), dtype=np.uint8)
             # Greenish agricultural background
-            rgb[:, :, 1] = np.random.randint(90, 140, (512, 512), dtype=np.uint8)
-            rgb[:, :, 0] = np.random.randint(60, 100, (512, 512), dtype=np.uint8)
-            rgb[:, :, 2] = np.random.randint(30, 70, (512, 512), dtype=np.uint8)
+            rgb[:, :, 1] = rng.integers(90, 140, (512, 512), dtype=np.uint8)
+            rgb[:, :, 0] = rng.integers(60, 100, (512, 512), dtype=np.uint8)
+            rgb[:, :, 2] = rng.integers(30, 70, (512, 512), dtype=np.uint8)
             # Add urban geometric clusters
             if "after" in name:
                 rgb[150:320, 200:400, 0] = 180  # Concrete bright returns
@@ -80,8 +90,18 @@ def _get_or_create_demo_image(name: str, sensor: SensorType) -> Path:
 @router.post("", response_model=InvestigationResponse)
 async def start_investigation(request: InvestigationRequest) -> InvestigationResponse:
     """Launch a 9-agent investigation on the specified question and satellite imagery."""
+    return await execute_investigation(request)
+
+
+async def execute_investigation(request: InvestigationRequest, persist: bool = True) -> InvestigationResponse:
+    """Workers persist results atomically with job completion."""
     investigation_id = f"inv-{uuid.uuid4().hex[:8]}"
-    backend = get_vlm_backend()
+    is_demo = all(image_id.startswith('demo-') for image_id in request.imagery_ids)
+    if not is_demo and any(image_id.startswith('demo-') for image_id in request.imagery_ids):
+        raise HTTPException(422, 'Choose either demo imagery or your uploaded imagery for one investigation.')
+    if not is_demo and settings.vlm_backend in ('demo', 'local_lora'):
+        raise HTTPException(503, 'A verified vision provider must be configured to analyze uploaded imagery. Demo scenarios remain available.')
+    backend = DemoBackend() if is_demo else get_vlm_backend()
     orchestrator = InvestigationOrchestrator(vlm_backend=backend)
 
     imagery_inputs: list[ImageryInput] = []
@@ -102,14 +122,6 @@ async def start_investigation(request: InvestigationRequest) -> InvestigationRes
                     resolved_path = cand
                     break
 
-        if resolved_path is None:
-            # Look on disk for matching uploaded file by ID prefix
-            matched = list(settings.upload_path.glob(f"{img_id}*"))
-            if matched and matched[0].is_file():
-                resolved_path = matched[0]
-                meta = extract_metadata(resolved_path, img_id)
-                IMAGERY_REGISTRY[img_id] = meta
-
         if resolved_path is not None and meta is not None:
             role = "before" if idx == 0 and len(request.imagery_ids) > 1 else ("after" if idx == 1 else "primary")
             imagery_inputs.append(ImageryInput(id=img_id, path=str(resolved_path), metadata=meta, role=role))
@@ -129,12 +141,18 @@ async def start_investigation(request: InvestigationRequest) -> InvestigationRes
         investigation_id=investigation_id,
     )
 
-    # Bound in-memory cache to prevent unbounded memory growth
-    if len(INVESTIGATION_CACHE) > 500:
-        for old_id in list(INVESTIGATION_CACHE.keys())[:50]:
-            INVESTIGATION_CACHE.pop(old_id, None)
-
-    INVESTIGATION_CACHE[investigation_id] = response
+    reference = next((item for item in imagery_inputs if item.role == 'after'), imagery_inputs[0])
+    response.provenance = {'mode': 'simulation' if is_demo else 'provider', 'backend': backend.__class__.__name__,
+        'analysis_mode': request.mode.value, 'evidence_image_id': reference.id,
+        'imagery_ids': request.imagery_ids, 'scientifically_validated': False,
+        'preview_urls': [('/assets/' if Path(item.path).parent.name == 'assets' else '/static/demo/') + Path(item.path).name if is_demo else '/static/uploads/' + item.metadata.extra.get('preview_filename', '') for item in imagery_inputs],
+        'image_georeferencing': reference.metadata.geo.model_dump(mode='json'),
+        'image_dimensions': {'width': reference.metadata.geo.width, 'height': reference.metadata.geo.height},
+        'limitations': ['Demo results are illustrative, not measurements.'] if is_demo else ['Model-generated interpretation requires independent review.']}
+    if is_demo and not response.answer.startswith('SIMULATION'):
+        response.answer = 'SIMULATION — ' + response.answer
+    if persist:
+        INVESTIGATION_CACHE[investigation_id] = response
     return response
 
 
@@ -182,7 +200,8 @@ async def analyze_spectral_index(
         "mean_value": mean_val,
         "interpretation": interpretation,
         "spectral_unit": unit,
-        "sensor_source": "Sentinel-2 MSI (10m Resolution)",
+        "sensor_source": "Synthetic demonstration (no spectral bands supplied)",
+        "is_demo": True,
         "band_combination": bands
     }
 
@@ -201,27 +220,15 @@ async def measure_polygon_area(request: PolygonMeasurementRequest) -> dict[str, 
         if len(p) < 2 or not math.isfinite(p[0]) or not math.isfinite(p[1]):
             raise HTTPException(status_code=400, detail="Each polygon vertex must contain valid finite [lat, lon] coordinates")
 
-    # Geodesic Shoelace Formula on spherical projection
-    R = 6378137.0  # Earth radius in meters
-    area_sqm = 0.0
-    perimeter_m = 0.0
-
+    if any(not -90 <= p[0] <= 90 or not -180 <= p[1] <= 180 for p in pts):
+        raise HTTPException(422, 'Coordinates must be valid WGS84 latitude and longitude')
+    from pyproj import Geod
+    from shapely.geometry import Polygon
+    if not Polygon([(p[1], p[0]) for p in pts]).is_valid:
+        raise HTTPException(422, 'Polygon intersects itself or has invalid geometry')
+    area_sqm, perimeter_m = Geod(ellps='WGS84').polygon_area_perimeter([p[1] for p in pts], [p[0] for p in pts])
+    area_sqm = abs(area_sqm)
     n = len(pts)
-    for i in range(n):
-        p1 = pts[i]
-        p2 = pts[(i + 1) % n]
-        lat1, lon1 = math.radians(p1[0]), math.radians(p1[1])
-        lat2, lon2 = math.radians(p2[0]), math.radians(p2[1])
-
-        area_sqm += (lon2 - lon1) * (2.0 + math.sin(lat1) + math.sin(lat2))
-
-        dlat = lat2 - lat1
-        dlon = lon2 - lon1
-        a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        perimeter_m += R * c
-
-    area_sqm = abs(area_sqm * (R**2) / 2.0)
     hectares = area_sqm / 10000.0
     sq_km = area_sqm / 1000000.0
     acres = hectares * 2.47105
@@ -253,62 +260,15 @@ async def export_investigation_geojson(investigation_id: str) -> dict[str, Any]:
     as an RFC 7946 compliant GeoJSON FeatureCollection ready for QGIS, ArcGIS, and ISRO Bhuvan.
     """
     inv = INVESTIGATION_CACHE.get(investigation_id)
-    features = []
-
-    if inv and inv.visual_overlays:
-        for idx, ov in enumerate(inv.visual_overlays):
-            ymin, xmin, ymax, xmax = ov.bbox if len(ov.bbox) == 4 else [0.2, 0.3, 0.5, 0.6]
-            features.append({
-                "type": "Feature",
-                "id": f"FEATURE-{idx+1:02d}",
-                "geometry": {
-                    "type": "Polygon",
-                    "coordinates": [[
-                        [xmin, ymin], [xmax, ymin], [xmax, ymax], [xmin, ymax], [xmin, ymin]
-                    ]]
-                },
-                "properties": {
-                    "overlay_type": ov.overlay_type,
-                    "label": ov.label,
-                    "confidence": ov.confidence,
-                    "category": ov.category
-                }
-            })
-    else:
-        features.append({
-            "type": "Feature",
-            "id": "AOI-01",
-            "geometry": {
-                "type": "Polygon",
-                "coordinates": [[
-                    [77.58, 12.96], [77.61, 12.96], [77.61, 12.98], [77.58, 12.98], [77.58, 12.96]
-                ]]
-            },
-            "properties": {
-                "name": "Verified Change AOI",
-                "status": "ANALYZED",
-                "change_detected": True
-            }
-        })
-
-    return {
-        "type": "FeatureCollection",
-        "crs": {
-            "type": "name",
-            "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"}
-        },
-        "metadata": {
-            "investigation_id": investigation_id,
-            "system": "BHUVISION Earth Intelligence (SIH26167)",
-            "organization": "Indian Space Research Organisation (ISRO)",
-            "team": "BANKAI",
-            "status": inv.status if inv else "COMPLETE",
-            "question": inv.question if inv else "Satellite change inquiry",
-            "answer": inv.answer if inv else "Spatial analysis completed.",
-            "timestamp": str(inv.created_at) if inv else "2026-09-09T00:00:00Z"
-        },
-        "features": features
-    }
+    if not inv:
+        raise HTTPException(404, 'Investigation not found')
+    from ..geospatial.export import grounded_features
+    features, warning = grounded_features(inv)
+    return {'type': 'FeatureCollection', 'features': features, 'metadata': {
+        'investigation_id': investigation_id, 'question': inv.question, 'answer': inv.answer,
+        'provenance': inv.provenance,
+        'warning': warning,
+        'pixel_overlays': [overlay.model_dump(mode='json') for overlay in inv.visual_overlays]}}
 
 
 def _seed_default_history() -> None:
@@ -388,8 +348,7 @@ def _seed_default_history() -> None:
     INVESTIGATION_CACHE["analysis-004"] = inv4
 
 
-# Initialize demo telemetry cache
-_seed_default_history()
+# Demo history is available explicitly through /demo-history.
 
 
 @router.get("", response_model=list[InvestigationResponse])
@@ -418,6 +377,15 @@ async def delete_investigation(investigation_id: str) -> dict[str, Any]:
 async def clear_cache() -> dict[str, Any]:
     """Reset and restore default telemetry history cache."""
     INVESTIGATION_CACHE.clear()
-    _seed_default_history()
     return {"status": "cleared", "total_records": len(INVESTIGATION_CACHE)}
 
+
+@router.post('/demo-history')
+async def seed_demo_history():
+    _seed_default_history()
+    for key in ('analysis-001', 'analysis-002', 'analysis-003', 'analysis-004'):
+        record = INVESTIGATION_CACHE[key]
+        record.provenance = {'mode': 'simulation', 'scientifically_validated': False}
+        record.answer = 'SIMULATION — ' + record.answer
+        INVESTIGATION_CACHE[key] = record
+    return {'status': 'demo_loaded'}

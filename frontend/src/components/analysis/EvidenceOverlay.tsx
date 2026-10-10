@@ -220,7 +220,7 @@ export function EvidenceOverlay({
         {/* Background imagery: Real uploaded raster or representative gradient */}
         {imageUrls && imageUrls.length > 0 && imageUrls[0] ? (
           <img
-            src={imageUrls[0]}
+            src={imageUrls[mode === 'single_image' ? 0 : imageUrls.length - 1]}
             alt="Evidence Base Scene"
             className="absolute inset-0 w-full h-full object-cover"
           />

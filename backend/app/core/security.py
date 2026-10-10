@@ -37,6 +37,6 @@ def ensure_safe_path(path: str, base_dir: str | None = None) -> Path:
     """Ensure a path doesn't escape the base directory (path traversal prevention)."""
     base = Path(base_dir or str(settings.upload_path)).resolve()
     resolved = (base / path).resolve()
-    if not str(resolved).startswith(str(base)):
+    if not resolved.is_relative_to(base):
         raise ValueError(f"Path traversal detected: {path}")
     return resolved

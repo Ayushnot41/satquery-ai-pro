@@ -1,385 +1,85 @@
 "use client";
-
-import React, { useState, useEffect } from "react";
-import { loginApi, registerApi, getGuestTokenApi } from "../../lib/api";
+import {AnimatedEarth} from "../pro/AnimatedEarth";
+import React, { useState, useEffect, useRef } from 'react';
+import { ArrowRight, Globe2, LockKeyhole, LoaderCircle } from 'lucide-react';
 
 export interface AuthUser {
-  id: string;
-  name: string;
-  email: string;
-  organization: string;
-  clearance_level: string;
-  role?: string;
-  token?: string;
+  id: string; name: string; email: string; organization: string; clearance_level: string;
+  role?: string; token?: string; guest?: boolean; email_verified?: boolean; phone_verified?: boolean; phone?: string;
 }
-
-interface AuthGatekeeperProps {
-  onAuthenticated: (user: AuthUser) => void;
-  currentUser: AuthUser | null;
-}
-
-export function getStoredAuthUser(): AuthUser | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem("satquery_auth_user");
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
+export function getStoredAuthUser(): AuthUser | null { return null; }
+export function clearStoredAuthUser() {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('satquery_auth_user'); localStorage.removeItem('satquery_auth_token');
   }
 }
-
-export function clearStoredAuthUser(): void {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem("satquery_auth_user");
-  localStorage.removeItem("satquery_auth_token");
+export async function identityRequest(path: string, body?: unknown) {
+  const response = await fetch(`/api/auth/${path}`, {method: body === undefined ? 'GET' : 'POST',
+    headers: body === undefined ? {} : {'Content-Type':'application/json'}, credentials:'same-origin',
+    body: body === undefined ? undefined : JSON.stringify(body)});
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'The request could not be completed. Check your input and connection.');
+  return data;
 }
 
-export function AuthGatekeeper({ onAuthenticated, currentUser }: AuthGatekeeperProps) {
-  const [activeTab, setActiveTab] = useState<"login" | "register" | "guest">("login");
-  const [email, setEmail] = useState<string>("ayush@isro.gov.in");
-  const [password, setPassword] = useState<string>("isro_bhuvision_2024");
-  const [name, setName] = useState<string>("");
-  const [organization, setOrganization] = useState<string>("Integrated Defense Staff / ISRO");
-  const [clearance, setClearance] = useState<string>("Level 3: Strategic Command & MoD");
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // If already authenticated, do not render gatekeeper
-  if (currentUser) return null;
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
+export function AuthGatekeeper({onAuthenticated, currentUser}: {onAuthenticated:(user:AuthUser)=>void;currentUser:AuthUser|null}) {
+  const [mode,setMode] = useState<'login'|'register'|'forgot'|'reset'|'phone'|'phone-code'>('login');
+  const [phone,setPhone] = useState('');
+  const [config,setConfig] = useState<any>(null);
+  const [error,setError] = useState(''); const [notice,setNotice] = useState('');
+  const [busy,setBusy] = useState(false); const [email,setEmail] = useState(''); const [password,setPassword] = useState('');
+  const [name,setName] = useState(''); const [code,setCode] = useState('');
+  const googleBox = useRef<HTMLDivElement>(null);
+  useEffect(() => { identityRequest('config').then(setConfig).catch(() => setError('The workspace service is unavailable. Start the backend and try again.')); clearStoredAuthUser(); }, []);
+  useEffect(() => {
+    if (!config?.google_client_id || currentUser) return;
+    const script = document.createElement('script'); script.src='https://accounts.google.com/gsi/client'; script.async=true;
+    script.onload = () => {
+      const google = (window as any).google;
+      google.accounts.id.initialize({client_id:config.google_client_id, callback:async ({credential}:any) => {
+        try {const data=await identityRequest('google',{credential});onAuthenticated(data.user);} catch(e) {setError((e as Error).message);}
+      }});
+      if(googleBox.current) google.accounts.id.renderButton(googleBox.current,{theme:'outline',size:'large',width:320});
+    };
+    document.head.appendChild(script); return () => script.remove();
+  },[config?.google_client_id,currentUser,onAuthenticated]);
+  if(currentUser) return null;
+  async function submit(event:React.FormEvent) {
+    event.preventDefault();setBusy(true);setError('');setNotice('');
     try {
-      const resp = await loginApi(email, password);
-      const user: AuthUser = {
-        id: resp.user?.id || "usr_isro_001",
-        name: resp.user?.name || "Ayush Sarkar",
-        email: resp.user?.email || email,
-        organization: resp.user?.organization || "ISRO Space Applications Centre (SAC)",
-        clearance_level: resp.user?.clearance_level || "Level 4: High Command (ISRO / MoD)",
-        token: resp.access_token,
-      };
-      localStorage.setItem("satquery_auth_user", JSON.stringify(user));
-      localStorage.setItem("satquery_auth_token", resp.access_token);
-      onAuthenticated(user);
-    } catch (err: any) {
-      // Offline fallback for pre-seeded user
-      if (email === "ayush@isro.gov.in" && password === "isro_bhuvision_2024") {
-        const user: AuthUser = {
-          id: "usr_isro_001",
-          name: "Ayush Sarkar",
-          email: "ayush@isro.gov.in",
-          organization: "ISRO Space Applications Centre (SAC)",
-          clearance_level: "Level 4: High Command (ISRO / MoD)",
-          token: "isro_jwt_session_token",
-        };
-        localStorage.setItem("satquery_auth_user", JSON.stringify(user));
-        onAuthenticated(user);
-      } else {
-        setError(err.message || "Invalid defense credentials or network error.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    try {
-      const resp = await registerApi(name, email, password, organization, clearance);
-      const user: AuthUser = {
-        id: resp.user?.id || `usr_${Date.now().toString(16)}`,
-        name: resp.user?.name || name,
-        email: resp.user?.email || email,
-        organization: resp.user?.organization || organization,
-        clearance_level: resp.user?.clearance_level || clearance,
-        token: resp.access_token,
-      };
-      localStorage.setItem("satquery_auth_user", JSON.stringify(user));
-      onAuthenticated(user);
-    } catch (err: any) {
-      setError(err.message || "Registration failed. Try guest clearance.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGuestClearance = async (level: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const resp = await getGuestTokenApi(level);
-      const user: AuthUser = {
-        id: resp.user?.id || "usr_guest",
-        name: resp.user?.name || "Tactical Field Operator",
-        email: resp.user?.email || "field.operator@isro.gov.in",
-        organization: resp.user?.organization || "Integrated Defense & Disaster Command",
-        clearance_level: level,
-        token: resp.access_token,
-      };
-      localStorage.setItem("satquery_auth_user", JSON.stringify(user));
-      onAuthenticated(user);
-    } catch {
-      const fallbackUser: AuthUser = {
-        id: "usr_guest_fallback",
-        name: "Tactical Defense Analyst",
-        email: "analyst@isro.gov.in",
-        organization: "HQ Integrated Defense Staff",
-        clearance_level: level,
-      };
-      localStorage.setItem("satquery_auth_user", JSON.stringify(fallbackUser));
-      onAuthenticated(fallbackUser);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#050811]/90 backdrop-blur-md p-4 select-none">
-      <div className="w-full max-w-lg bg-[#0A0F1C] border border-cyan-500/40 rounded-2xl shadow-2xl shadow-cyan-950/60 overflow-hidden flex flex-col font-sans">
-        
-        {/* Security Warning Header */}
-        <div className="bg-gradient-to-r from-blue-900/60 via-[#0E1B38] to-cyan-900/60 border-b border-cyan-500/30 p-5 text-white flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/30 border border-cyan-300/40">
-              <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-base font-mono tracking-tight">BHUVISION // SATQUERY</span>
-                <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-500/40">
-                  SIH26167
-                </span>
-              </div>
-              <p className="text-[11px] text-gray-300 font-mono">Government Security Clearance Gatekeeper</p>
-            </div>
-          </div>
-          <div className="flex flex-col items-end">
-            <span className="text-[9px] font-mono uppercase tracking-widest text-amber-400 font-bold flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-              RESTRICTED
-            </span>
-            <span className="text-[10px] text-gray-400 font-mono">ISRO / MoD Doctrine</span>
-          </div>
-        </div>
-
-        {/* Tab Navigation */}
-        <div className="flex border-b border-[#1F2937] bg-[#070B14] p-1 text-xs font-mono">
-          <button
-            onClick={() => setActiveTab("login")}
-            className={`flex-1 py-2 rounded-lg transition-all cursor-pointer ${
-              activeTab === "login"
-                ? "bg-cyan-600 text-white font-bold shadow-md shadow-cyan-600/30"
-                : "text-gray-400 hover:text-white"
-            }`}
-          >
-            Clearance Login
-          </button>
-          <button
-            onClick={() => setActiveTab("register")}
-            className={`flex-1 py-2 rounded-lg transition-all cursor-pointer ${
-              activeTab === "register"
-                ? "bg-cyan-600 text-white font-bold shadow-md shadow-cyan-600/30"
-                : "text-gray-400 hover:text-white"
-            }`}
-          >
-            Officer Enlistment
-          </button>
-          <button
-            onClick={() => setActiveTab("guest")}
-            className={`flex-1 py-2 rounded-lg transition-all cursor-pointer ${
-              activeTab === "guest"
-                ? "bg-purple-600 text-white font-bold shadow-md shadow-purple-600/30"
-                : "text-gray-400 hover:text-white"
-            }`}
-          >
-            Quick Guest Access
-          </button>
-        </div>
-
-        {/* Form Body */}
-        <div className="p-6 space-y-4">
-          {error && (
-            <div className="bg-rose-950/60 border border-rose-500/40 text-rose-300 p-3 rounded-lg text-xs font-mono">
-              ⚠ {error}
-            </div>
-          )}
-
-          {activeTab === "login" && (
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="block text-xs font-mono text-gray-300 mb-1">Official Defense / ISRO Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  placeholder="officer@isro.gov.in"
-                  className="w-full bg-[#111827] border border-[#1F2937] focus:border-cyan-500 text-white px-3 py-2 rounded-lg text-xs font-mono outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-mono text-gray-300 mb-1">Security Clearance Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="w-full bg-[#111827] border border-[#1F2937] focus:border-cyan-500 text-white px-3 py-2 rounded-lg text-xs font-mono outline-none"
-                />
-              </div>
-
-              <div className="flex items-center justify-between text-[11px] font-mono text-gray-400">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmail("ayush@isro.gov.in");
-                    setPassword("isro_bhuvision_2024");
-                  }}
-                  className="text-cyan-400 hover:underline cursor-pointer"
-                >
-                  Fill Pre-Seeded ISRO Credentials
-                </button>
-                <span className="text-gray-500">AES-256 Encrypted</span>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-mono font-bold text-xs shadow-lg shadow-cyan-600/30 transition-all cursor-pointer flex items-center justify-center gap-2"
-              >
-                {loading ? "Authenticating Clearance..." : "Authenticate & Enter Cockpit"}
-              </button>
-            </form>
-          )}
-
-          {activeTab === "register" && (
-            <form onSubmit={handleRegister} className="space-y-3">
-              <div>
-                <label className="block text-[11px] font-mono text-gray-300 mb-1">Officer Name</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  placeholder="Commander K. Sharma"
-                  className="w-full bg-[#111827] border border-[#1F2937] focus:border-cyan-500 text-white px-3 py-2 rounded-lg text-xs font-mono outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-mono text-gray-300 mb-1">Government Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  placeholder="commander@navy.gov.in"
-                  className="w-full bg-[#111827] border border-[#1F2937] focus:border-cyan-500 text-white px-3 py-2 rounded-lg text-xs font-mono outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-mono text-gray-300 mb-1">Service Branch / Organization</label>
-                <select
-                  value={organization}
-                  onChange={(e) => setOrganization(e.target.value)}
-                  className="w-full bg-[#111827] border border-[#1F2937] text-white px-3 py-2 rounded-lg text-xs font-mono outline-none"
-                >
-                  <option value="Indian Navy (Western/Eastern Fleet)">Indian Navy (Western/Eastern Fleet)</option>
-                  <option value="Indian Air Force (Air Defence Command)">Indian Air Force (Air Defence Command)</option>
-                  <option value="Indian Army / Northern Command">Indian Army / Northern Command</option>
-                  <option value="Border Security Force (BSF) Water Wing">Border Security Force (BSF) Water Wing</option>
-                  <option value="ISRO Space Applications Centre (SAC)">ISRO Space Applications Centre (SAC)</option>
-                  <option value="National Disaster Response Force (NDRF)">National Disaster Response Force (NDRF)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-[11px] font-mono text-gray-300 mb-1">Requested Clearance Level</label>
-                <select
-                  value={clearance}
-                  onChange={(e) => setClearance(e.target.value)}
-                  className="w-full bg-[#111827] border border-[#1F2937] text-white px-3 py-2 rounded-lg text-xs font-mono outline-none"
-                >
-                  <option value="Level 1: Civilian Remote Sensing Analyst">Level 1: Civilian Remote Sensing Analyst</option>
-                  <option value="Level 2: Field Tactical Commander">Level 2: Field Tactical Commander</option>
-                  <option value="Level 3: Strategic Command & MoD">Level 3: Strategic Command &amp; MoD</option>
-                  <option value="Level 4: High Command (ISRO / MoD)">Level 4: High Command (ISRO / MoD)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-[11px] font-mono text-gray-300 mb-1">Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  placeholder="••••••••••••"
-                  className="w-full bg-[#111827] border border-[#1F2937] focus:border-cyan-500 text-white px-3 py-2 rounded-lg text-xs font-mono outline-none"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-mono font-bold text-xs shadow-lg shadow-cyan-600/30 transition-all cursor-pointer"
-              >
-                {loading ? "Registering Officer..." : "Enlist & Issue Security Token"}
-              </button>
-            </form>
-          )}
-
-          {activeTab === "guest" && (
-            <div className="space-y-4">
-              <p className="text-xs text-gray-300 font-mono leading-relaxed">
-                For SIH judges, academic evaluators, and rapid demonstrations, select a pre-authenticated clearance tier to bypass login:
-              </p>
-
-              <div className="grid grid-cols-1 gap-2.5">
-                <button
-                  onClick={() => handleGuestClearance("Level 2: Field Tactical Commander")}
-                  disabled={loading}
-                  className="p-3 rounded-xl bg-[#111827] border border-cyan-500/40 hover:border-cyan-400 hover:bg-[#132238] text-left transition-all cursor-pointer flex items-center justify-between"
-                >
-                  <div>
-                    <div className="font-mono font-bold text-xs text-cyan-300">Tactical Field Commander</div>
-                    <div className="text-[10px] font-mono text-gray-400">Full access to SAR Reader, Multi-Sensor, &amp; Disaster Routing</div>
-                  </div>
-                  <span className="text-[10px] font-mono font-bold text-cyan-400 bg-cyan-950/80 px-2 py-1 rounded border border-cyan-500/30">
-                    ENTER →
-                  </span>
-                </button>
-
-                <button
-                  onClick={() => handleGuestClearance("Level 3: Strategic Command & MoD")}
-                  disabled={loading}
-                  className="p-3 rounded-xl bg-[#111827] border border-purple-500/40 hover:border-purple-400 hover:bg-[#1f1538] text-left transition-all cursor-pointer flex items-center justify-between"
-                >
-                  <div>
-                    <div className="font-mono font-bold text-xs text-purple-300">Strategic Command &amp; Defense (MoD)</div>
-                    <div className="text-[10px] font-mono text-gray-400">Unlocks Indian Navy, Air Force, and Army / BSF Defense Intelligence</div>
-                  </div>
-                  <span className="text-[10px] font-mono font-bold text-purple-400 bg-purple-950/80 px-2 py-1 rounded border border-purple-500/30">
-                    DEFENSE OPS →
-                  </span>
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer info */}
-        <div className="bg-[#070B14] border-t border-[#1F2937] p-3 text-[10px] text-gray-500 font-mono flex items-center justify-between">
-          <span>Official Space Technology Stack: ISRO // BANKAI</span>
-          <span className="text-emerald-400">TLS 1.3 Certified</span>
-        </div>
-      </div>
-    </div>
-  );
+      if(mode==='phone') {const d=await identityRequest('otp/send',{phone,purpose:'login'});setNotice(d.development_code ? `Local development code: ${d.development_code}` : d.message);setCode('');setMode('phone-code');}
+      else if(mode==='phone-code') {const d=await identityRequest('otp/verify',{phone,otp:code,purpose:'login'});onAuthenticated(d.user);}
+      else if(mode==='forgot') {const d=await identityRequest('password/forgot',{email});setNotice(d.development_token ? `Local development code: ${d.development_token}` : d.message);setMode('reset');}
+      else if(mode==='reset') {const d=await identityRequest('password/reset',{token:code,password});setMode('login');setPassword('');setNotice(d.message);}
+      else {const d=await identityRequest(mode, mode==='register'?{name,email,password}:{email,password});onAuthenticated(d.user);}
+    } catch(e) {setError((e as Error).message);} finally {setBusy(false);}
+  }
+  async function guest() {setBusy(true);setError('');try{const d=await identityRequest('guest-token',{});onAuthenticated(d.user);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+  return <main className="pro-auth">
+    <section className="pro-auth-story"><a className="pro-brand" href="/"><Globe2 size={30}/><span>satquery<span className="pro-brand-ai"> / AI</span></span><small>PRO</small></a>
+      <div className="pro-auth-art"><AnimatedEarth/><span className="pro-orbit-label">A NEW PERSPECTIVE ON OUR PLANET</span></div>
+      <div><span className="pro-eyebrow">EARTH INTELLIGENCE WORKSPACE</span><h1>See the change.<br/><em>Understand the why.</em></h1><p>Bring imagery, geospatial context, and nine specialist agents into one focused workspace.</p></div>
+      <footer><span>Optical + radar imagery</span><span>3D exploration</span><span>Traceable evidence</span></footer>
+    </section>
+    <section className="pro-auth-panel"><div className="pro-auth-form"><div className="pro-icon-tile"><LockKeyhole size={23}/></div><span className="pro-eyebrow">YOUR WORKSPACE, CONNECTED</span>
+      <h2>{config?.public_preview?'Explore Satquery.':mode==='phone'?'Sign in by phone.':mode==='phone-code'?'Enter your SMS code.':mode==='login'?'Welcome back.':mode==='register'?'Start exploring.':mode==='forgot'?'Reset your password.':'Choose a new password.'}</h2>
+      <p>{config?.public_preview?'Try sample imagery, investigations, and reports. This temporary preview does not accept accounts or uploads.':mode==='register'?'Create your private workspace. Verify your email in Account settings.':'Sign in to your imagery, investigations, and saved evidence.'}</p>
+      {!config?.public_preview&&<form onSubmit={submit}>
+        {mode==='register'&&<label>Full name<input autoComplete="name" value={name} onChange={e=>setName(e.target.value)} required minLength={2}/></label>}
+        {(mode==='login'||mode==='register'||mode==='forgot')&&<label>Email address<input type="email" autoComplete="email" placeholder="you@organization.com" value={email} onChange={e=>setEmail(e.target.value)} required/></label>}
+        {mode==='phone'&&<label>Verified phone number<input type="tel" autoComplete="tel" placeholder="+91…" value={phone} onChange={e=>setPhone(e.target.value)} pattern="\+[1-9][0-9]{7,14}" required/><small>Use a phone already verified in your account settings.</small></label>}
+        {mode==='phone-code'&&<label>SMS code<input autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={code} onChange={e=>setCode(e.target.value)} required/></label>}
+        {mode==='reset'&&<label>Reset code<input autoComplete="one-time-code" value={code} onChange={e=>setCode(e.target.value)} required/></label>}
+        {(mode==='login'||mode==='register'||mode==='reset')&&<label>Password<input type="password" autoComplete={mode==='login'?'current-password':'new-password'} placeholder={mode==='login'?'Enter your password':'At least 12 characters'} value={password} minLength={mode==='login'?1:12} maxLength={256} onChange={e=>setPassword(e.target.value)} required/></label>}
+        {mode==='login'&&<button type="button" className="pro-text-button pro-forgot" onClick={()=>{setMode('forgot');setError('');}}>Forgot password?</button>}
+        {error&&<div role="alert" className="pro-alert">{error}</div>}{notice&&<div role="status" className="pro-notice break-all">{notice}</div>}
+        <button className="pro-primary" disabled={busy}>{busy?<LoaderCircle className="animate-spin" size={17}/>:mode==='phone'?'Send SMS code':mode==='phone-code'?'Verify and sign in':mode==='login'?'Sign in':mode==='register'?'Create account':mode==='forgot'?'Send reset code':'Update password'}<ArrowRight size={17}/></button>
+      </form>}
+      {config?.public_preview&&error&&<div role="alert" className="pro-alert">{error}</div>}
+      <div ref={googleBox} className="mt-4"/>
+      {mode==='login'&&(config?.sms_delivery||config?.development_codes)&&<button className="pro-secondary w-full mt-3" disabled={busy} onClick={()=>{setMode('phone');setError('');setNotice('');}}>Sign in with a verified phone</button>}
+      {!config?.public_preview&&<div className="pro-auth-switch">{mode==='login'?'New to Satquery?':'Already have an account?'} <button onClick={()=>{setMode(mode==='login'?'register':'login');setError('');setNotice('');}}>{mode==='login'?'Create an account':'Sign in'}</button></div>}
+      {config?.demo_guest&&<><div className="pro-divider"><span>OR EXPLORE FIRST</span></div><button className="pro-secondary w-full" disabled={busy} onClick={guest}>Explore the demo workspace <ArrowRight size={16}/></button><p className="pro-auth-note">Synthetic scenarios. No live surveillance or verified geographic conclusions.</p></>}
+    </div><div className="pro-auth-bottom">Satquery AI Pro <span>Built on BHUVISION · Team BANKAI</span></div></section>
+  </main>;
 }

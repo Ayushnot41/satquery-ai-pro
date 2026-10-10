@@ -8,6 +8,7 @@ from app.main import app
 @pytest.mark.asyncio
 async def test_sar_presets():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         res = await client.get("/api/sar-reader/presets")
         assert res.status_code == 200
         presets = res.json()
@@ -20,6 +21,7 @@ async def test_sar_presets():
 @pytest.mark.asyncio
 async def test_sar_processing_vv():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         payload = {
             "preset_id": "brahmaputra_flood",
             "polarization": "VV",
@@ -41,6 +43,7 @@ async def test_sar_processing_vv():
 @pytest.mark.asyncio
 async def test_sar_processing_cross_pol_ratio():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         payload = {
             "preset_id": "karwar_naval_dock",
             "polarization": "VV_VH_RATIO",

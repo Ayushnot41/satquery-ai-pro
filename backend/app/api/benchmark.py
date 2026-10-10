@@ -14,10 +14,11 @@ import asyncio
 import random
 from datetime import datetime, timezone
 from typing import Any
+from ..core.provenance import SimulationRoute
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-router = APIRouter(prefix="/benchmark", tags=["Benchmark & Evaluation"])
+router = APIRouter(route_class=SimulationRoute, prefix="/benchmark", tags=["Benchmark & Evaluation"])
 
 
 class MetricItem(BaseModel):

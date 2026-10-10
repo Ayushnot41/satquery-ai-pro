@@ -41,7 +41,7 @@ export function DefenseIntelView() {
       pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
       const safeBranch = activeBranch;
       const safeLoc = (activeHotspot?.name || "Installation").replace(/[^a-zA-Z0-9_-]/g, "_");
-      pdf.save(`MoD_Strategic_Defense_Dossier_${safeBranch}_${safeLoc}_${Date.now()}.pdf`);
+      pdf.save(`Satquery_Defense_Simulation_${safeBranch}_${safeLoc}_${Date.now()}.pdf`);
     } catch (err) {
       console.error("Defense PDF export error:", err);
       alert("Failed to render Defense Dossier PDF. Please try again.");
@@ -428,7 +428,7 @@ export function DefenseIntelView() {
           <div className="bg-[#070B14] border border-[#1F2937] p-3 rounded-lg font-mono text-[10px] text-gray-400 space-y-1">
             <div className="text-gray-200 font-bold">MILITARY GRID REFERENCE PROTOCOL</div>
             <div>WGS84 Ellipsoid &bull; UTM Projection &bull; 100km Square Identifiers</div>
-            <div className="text-cyan-400">ISRO Geo-Intelligence Compliant</div>
+            <div className="text-cyan-400">Illustrative geospatial overlay</div>
           </div>
         </div>
       </div>

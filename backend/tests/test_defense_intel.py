@@ -8,6 +8,7 @@ from app.main import app
 @pytest.mark.asyncio
 async def test_defense_hotspots_list():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         res = await client.get("/api/defense/hotspots")
         assert res.status_code == 200
         hotspots = res.json()
@@ -21,6 +22,7 @@ async def test_defense_hotspots_list():
 @pytest.mark.asyncio
 async def test_defense_navy_analysis():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         payload = {
             "branch": "NAVY",
             "hotspot_id": "NAVY-01",
@@ -42,6 +44,7 @@ async def test_defense_navy_analysis():
 @pytest.mark.asyncio
 async def test_defense_air_force_analysis():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         payload = {
             "branch": "AIR_FORCE",
             "hotspot_id": "IAF-01",
@@ -61,6 +64,7 @@ async def test_defense_air_force_analysis():
 @pytest.mark.asyncio
 async def test_defense_army_bsf_analysis():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         payload = {
             "branch": "ARMY_BSF",
             "hotspot_id": "ARMY-01",
@@ -80,6 +84,7 @@ async def test_defense_army_bsf_analysis():
 @pytest.mark.asyncio
 async def test_defense_tactical_layers():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         res = await client.get("/api/defense/tactical-layers")
         assert res.status_code == 200
         layers = res.json()["layers"]

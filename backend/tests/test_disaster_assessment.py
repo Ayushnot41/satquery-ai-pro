@@ -8,6 +8,7 @@ from app.main import app
 @pytest.mark.asyncio
 async def test_disaster_flood_assessment():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         payload = {
             "location_name": "Brahmaputra Flood Plain, Assam",
             "lat": 26.2006,
@@ -28,6 +29,7 @@ async def test_disaster_flood_assessment():
 @pytest.mark.asyncio
 async def test_disaster_landslide_assessment():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         payload = {
             "location_name": "Kedarnath Valley, Uttarakhand",
             "lat": 30.7346,
@@ -44,6 +46,7 @@ async def test_disaster_landslide_assessment():
 @pytest.mark.asyncio
 async def test_evacuation_corridor_post_json():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         payload = {
             "origin_lat": 26.2006,
             "origin_lon": 92.9376,

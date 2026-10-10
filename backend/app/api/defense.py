@@ -12,12 +12,13 @@ from __future__ import annotations
 import math
 import random
 from typing import Any, List, Optional, Dict
+from ..core.provenance import SimulationRoute
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
 from ..geospatial.geocoding import HOTSPOT_REGISTRY, LocationResult
 
-router = APIRouter(prefix="/defense", tags=["Defense & Armed Forces Intelligence"])
+router = APIRouter(route_class=SimulationRoute, prefix="/defense", tags=["Defense & Armed Forces Intelligence"])
 
 
 class DefenseHotspot(BaseModel):

@@ -9,8 +9,6 @@ import { EvidenceOverlay } from "./EvidenceOverlay";
 import { AnswerConfidencePanel } from "./AnswerConfidencePanel";
 import { ExecutionTrace } from "./ExecutionTrace";
 import { PdfReportTemplate } from "./PdfReportTemplate";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
 
 interface AnalysisResultsViewProps {
   result?: AnalysisResult | null;
@@ -18,7 +16,7 @@ interface AnalysisResultsViewProps {
 }
 
 // ─── Processing / loading layout ──────────────────────────────────────────
-function ProcessingState() {
+function ProcessingState({message}: {message: string}) {
   const PIPELINE_STEPS = [
     "Input Inspection",
     "Compatibility Gate",
@@ -31,7 +29,7 @@ function ProcessingState() {
     "Audit & Trace",
   ];
 
-  const [activeStep] = useState(4); // Simulate mid-pipeline
+  const activeStep = -1; // Individual agent completion is shown only in the returned trace.
 
   return (
     <div className="w-full max-w-7xl mx-auto p-6 space-y-6">
@@ -40,10 +38,10 @@ function ProcessingState() {
         <div className="flex items-center gap-3">
           <div className="w-4 h-4 rounded-full border-2 border-blue-400 border-t-transparent animate-spin" />
           <span className="font-mono font-bold text-blue-300 text-sm tracking-wider uppercase">
-            SATQUERY PIPELINE EXECUTING
+            {message}
           </span>
           <span className="ml-auto text-[10px] font-mono text-gray-500 animate-pulse">
-            Agent council processing...
+            Pipeline stages · waiting for result
           </span>
         </div>
 
@@ -85,7 +83,7 @@ function ProcessingState() {
 }
 
 // ─── Error state ───────────────────────────────────────────────────────────
-function ErrorState({ onBack, onRetry }: { onBack?: () => void; onRetry?: () => void }) {
+function ErrorState({ onBack, onRetry, message }: { onBack?: () => void; onRetry?: () => void; message: string }) {
   return (
     <div className="w-full max-w-7xl mx-auto p-6 flex flex-col items-center justify-center min-h-96 gap-6">
       <div className="bg-[#111827] border border-rose-500/50 rounded-xl p-8 flex flex-col items-center gap-4 max-w-md w-full text-center">
@@ -101,7 +99,7 @@ function ErrorState({ onBack, onRetry }: { onBack?: () => void; onRetry?: () => 
             Pipeline Error
           </h2>
           <p className="text-sm text-gray-400 mt-2 leading-relaxed">
-            The 9-agent investigation pipeline encountered an unrecoverable error. The execution trace has been committed for audit.
+            {message}
           </p>
         </div>
         <div className="flex gap-3">
@@ -177,10 +175,15 @@ export function AnalysisResultsView({ result: propResult, onBack }: AnalysisResu
   const [mockIdx, setMockIdx] = useState(0);
   const result = propResult ?? ALL_MOCK_RESULTS[mockIdx];
   const workspaceRef = React.useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
 
   const exportToPDF = async () => {
-    if (!workspaceRef.current) return;
+    if (!workspaceRef.current || exporting) return;
+    setExporting(true);
+    setExportError('');
     try {
+      const [{default: html2canvas}, {default: jsPDF}] = await Promise.all([import('html2canvas'), import('jspdf')]);
       const canvas = await html2canvas(workspaceRef.current, {
         scale: 2,
         useCORS: true,
@@ -195,31 +198,35 @@ export function AnalysisResultsView({ result: propResult, onBack }: AnalysisResu
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
       
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`ISRO-SatQuery-Intelligence-Report-${Date.now()}.pdf`);
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      for (let offset = 0; offset < pdfHeight; offset += pageHeight) {
+        if (offset > 0) pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, -offset, pdfWidth, pdfHeight);
+      }
+      pdf.save(`Satquery-Analysis-Report-${Date.now()}.pdf`);
     } catch (err) {
-      console.error("PDF generation failed:", err);
-    }
+      setExportError('The report could not be exported. Please try again.');
+    } finally { setExporting(false); }
   };
 
   if (result.status === "processing") {
-    return <ProcessingState />;
+    return <ProcessingState message={result.answer} />;
   }
 
   if (result.status === "error") {
-    return <ErrorState onBack={onBack} />;
+    return <ErrorState onBack={onBack} message={result.answer} />;
   }
 
-  const totalMs = result.trace.reduce((acc, s) => acc + s.duration_ms, 0);
+  const totalMs = result.total_duration_ms ?? result.trace.reduce((end, s) => Math.max(end, s.timestamp_offset_ms || 0), 0);
 
   // SAR metrics for the evidence overlay physics chip
   const sarMetrics =
     result.mode === "optical_sar"
       ? {
-          "σ⁰ (VV)": result.metrics["Water Backscatter (VV)"] ?? result.metrics["Water σ⁰ (VV)"] ?? "−22.4 dB",
-          "VH/VV Ratio": result.metrics["VH/VV Ratio"] ?? "0.31",
-          "Lee Filter": result.metrics["Lee Filter Window"] ?? "7×7 px",
-          "Cloud Cover": result.metrics["Optical Cloud Cover"] ?? "100%",
+          "σ⁰ (VV)": result.metrics["Water Backscatter (VV)"] ?? result.metrics["Water σ⁰ (VV)"] ?? "Not reported",
+          "VH/VV Ratio": result.metrics["VH/VV Ratio"] ?? "Not reported",
+          "Lee Filter": result.metrics["Lee Filter Window"] ?? "Not reported",
+          "Cloud Cover": result.metrics["Optical Cloud Cover"] ?? "Not reported",
         }
       : undefined;
 
@@ -230,8 +237,10 @@ export function AnalysisResultsView({ result: propResult, onBack }: AnalysisResu
       <div className="w-full max-w-7xl mx-auto p-6 space-y-5 text-white select-none relative z-10">
         {/* ─── Export & Demo switcher ─────────────────────────────── */}
       <div className="flex items-center justify-end gap-3">
+        {exportError && <p role="alert" className="text-sm text-rose-300">{exportError}</p>}
         <button
             onClick={exportToPDF}
+            disabled={exporting}
             className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-[10px] rounded border border-emerald-400/30 transition-all flex items-center gap-2 font-mono uppercase tracking-wider cursor-pointer"
           >
             <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -241,7 +250,7 @@ export function AnalysisResultsView({ result: propResult, onBack }: AnalysisResu
               <line x1="16" y1="17" x2="8" y2="17"></line>
               <polyline points="10 9 9 9 8 9"></polyline>
             </svg>
-            Export PDF Report
+            {exporting ? 'Preparing PDF…' : 'Export PDF Report'}
           </button>
         {!propResult && (
           <MockModeSwitcher activeIdx={mockIdx} onChange={setMockIdx} />
@@ -292,11 +301,11 @@ export function AnalysisResultsView({ result: propResult, onBack }: AnalysisResu
           BHUVISION SIH26167 // Results Record — {result.run_id}
         </span>
         <div className="flex items-center gap-4">
-          <span>9 Agents Operational</span>
+          <span>9-agent architecture</span>
           <span>|</span>
-          <span>Zero-Hallucination Protocol</span>
+          <span>Independent review required</span>
           <span>|</span>
-          <span className="text-emerald-500">Audit Committed</span>
+          <span className="text-emerald-500">Execution trace available</span>
         </div>
       </div>
     </div>

@@ -130,12 +130,12 @@ export const MODE_CONFIG: Record<AnalysisMode, ModeConfig> = {
       "Detect agricultural parcel boundaries and crop health indicators.",
     ],
     demoPreset: {
-      question: "Locate and highlight all industrial storage reservoirs and estimate dock surface activity.",
+      question: "Describe the visible land cover in this illustrative construction scene.",
       slot1: {
-        name: "CARTOSAT-3_PAN_BAND1_VIZAG.tif",
-        size: "48.2 MB",
+        name: "Demo optical scene.png",
+        size: "Illustrative sample",
         previewUrl:
-          "https://images.unsplash.com/photo-1541185933-ef5d8ed016c2?auto=format&fit=crop&w=800&q=80",
+          "/assets/demo-construction-before.png",
       },
     },
   },
@@ -145,7 +145,7 @@ export const MODE_CONFIG: Record<AnalysisMode, ModeConfig> = {
     badge: "CHANGE DETECTION PIPELINE",
     tag: "T1/T2 COMPARATIVE SURVEILLANCE",
     description:
-      "Compare multi-temporal baseline image pairs (T1 and T2) with trained Siamese U-Net models to detect building construction, urban sprawl, flood inundation, and environmental shifts.",
+      "Compare earlier and later imagery for construction, urban growth, flooding, and environmental change. Uses a classical comparison method, or Siamese U-Net when a verified checkpoint is configured.",
     accent: "purple",
     accentHex: "#a855f7",
     borderActive: "border-purple-500",
@@ -180,16 +180,16 @@ export const MODE_CONFIG: Record<AnalysisMode, ModeConfig> = {
     demoPreset: {
       question: "Where has new residential construction and earthworks expanded between T1 and T2?",
       slot1: {
-        name: "RISAT-1A_2024-03-12_T1_BASELINE.tif",
-        size: "62.4 MB",
+        name: "Demo construction before.png",
+        size: "Illustrative sample · T1",
         previewUrl:
-          "https://images.unsplash.com/photo-1524813686514-a57563d77d66?auto=format&fit=crop&w=800&q=80",
+          "/assets/demo-construction-before.png",
       },
       slot2: {
-        name: "RISAT-1A_2024-09-01_T2_TARGET.tif",
-        size: "64.1 MB",
+        name: "Demo construction after.png",
+        size: "Illustrative sample · T2",
         previewUrl:
-          "https://images.unsplash.com/photo-1508873696983-2df5703bc2e1?auto=format&fit=crop&w=800&q=80",
+          "/assets/demo-construction-after.png",
       },
       missionContext: "general_change",
     },
@@ -235,16 +235,16 @@ export const MODE_CONFIG: Record<AnalysisMode, ModeConfig> = {
     demoPreset: {
       question: "Delineate standing water boundaries beneath cloud cover using SAR backscatter dip.",
       slot1: {
-        name: "SENTINEL2_OPTICAL_RGB_BANDS432.tif",
-        size: "54.8 MB",
+        name: "Demo flood optical.png",
+        size: "Illustrative optical sample",
         previewUrl:
-          "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80",
+          "/assets/demo-flood-pre-optical.png",
       },
       slot2: {
-        name: "SENTINEL1_SAR_C-BAND_VV_VH.tif",
-        size: "51.3 MB",
+        name: "Demo flood radar.png",
+        size: "Illustrative SAR sample",
         previewUrl:
-          "https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=800&q=80",
+          "/assets/demo-flood-post-sar.png",
       },
       missionContext: "disaster_assessment",
       disasterType: "flood",
@@ -315,12 +315,13 @@ export function NewAnalysisView({ onRunPipeline, onNavigateHome }: NewAnalysisVi
   const [slot1, setSlot1] = useState<UploadSlotState | undefined>(undefined);
   const [slot2, setSlot2] = useState<UploadSlotState | undefined>(undefined);
   const [question, setQuestion] = useState<string>("");
+  const [uploadError, setUploadError] = useState("");
+  useEffect(() => () => { if (slot1?.previewUrl.startsWith('blob:')) URL.revokeObjectURL(slot1.previewUrl); }, [slot1?.previewUrl]);
+  useEffect(() => () => { if (slot2?.previewUrl.startsWith('blob:')) URL.revokeObjectURL(slot2.previewUrl); }, [slot2?.previewUrl]);
 
   // UI / Layout states
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isLiveMode, setIsLiveMode] = useState(true);
-  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
-  const [selectedLanguage, setSelectedLanguage] = useState("GB EN");
   const [dragActive1, setDragActive1] = useState(false);
   const [dragActive2, setDragActive2] = useState(false);
 
@@ -395,6 +396,11 @@ export function NewAnalysisView({ onRunPipeline, onNavigateHome }: NewAnalysisVi
   };
 
   const processFile = (file: File, slotIndex: 1 | 2) => {
+    if (!/\.(tiff?|png|jpe?g)$/i.test(file.name) || file.size === 0 || file.size > 100 * 1024 * 1024) {
+      setUploadError("Choose a GeoTIFF, PNG or JPEG file up to 100 MB.");
+      return;
+    }
+    setUploadError("");
     const url = URL.createObjectURL(file);
     const sizeStr = `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
     const slotState: UploadSlotState = {
@@ -543,6 +549,11 @@ export function NewAnalysisView({ onRunPipeline, onNavigateHome }: NewAnalysisVi
                 return (
                   <div
                     key={modeKey}
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={isSelected}
+                    aria-label={item.title}
+                    onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); handleModeChange(modeKey); } }}
                     onClick={() => handleModeChange(modeKey)}
                     className={`relative p-5 rounded-xl border transition-all duration-200 cursor-pointer flex flex-col justify-between ${
                       isSelected
@@ -635,6 +646,10 @@ export function NewAnalysisView({ onRunPipeline, onNavigateHome }: NewAnalysisVi
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* General Change Analysis */}
               <div
+                role="button"
+                tabIndex={0}
+                aria-pressed={missionContext === 'general_change'}
+                onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setMissionContext('general_change'); } }}
                 onClick={() => setMissionContext("general_change")}
                 className={`p-4 rounded-xl border transition-all cursor-pointer ${
                   missionContext === "general_change"
@@ -661,6 +676,10 @@ export function NewAnalysisView({ onRunPipeline, onNavigateHome }: NewAnalysisVi
 
               {/* Disaster Assessment */}
               <div
+                role="button"
+                tabIndex={0}
+                aria-pressed={missionContext === 'disaster_assessment'}
+                onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setMissionContext('disaster_assessment'); if (!disasterType) setDisasterType('flood'); } }}
                 onClick={() => {
                   setMissionContext("disaster_assessment");
                   if (!disasterType) setDisasterType("flood");
@@ -738,6 +757,7 @@ export function NewAnalysisView({ onRunPipeline, onNavigateHome }: NewAnalysisVi
               </div>
             </div>
 
+            {uploadError && <p role="alert" className="pro-alert mb-4">{uploadError}</p>}
             {/* Dynamic Dropzones based on mode */}
             <div
               className={`grid gap-5 ${
@@ -778,12 +798,13 @@ export function NewAnalysisView({ onRunPipeline, onNavigateHome }: NewAnalysisVi
                         </p>
                         <p className="text-[10px] font-mono text-gray-400">{slot1.size}</p>
                         <span className="text-[9px] font-mono text-emerald-400">
-                          ✓ GEOSPATIAL PAYLOAD VERIFIED
+                          {slot1.isDemo ? 'DEMO SCENE LOADED' : 'FILE SELECTED · VALIDATES ON UPLOAD'}
                         </span>
                       </div>
                     </div>
                     <button
                       onClick={() => handleRemoveSlot(1)}
+                      aria-label="Remove first image"
                       className="p-1.5 rounded-md bg-gray-800 hover:bg-red-950/60 text-gray-400 hover:text-red-400 transition-colors cursor-pointer"
                     >
                       <X className="w-4 h-4" />
@@ -819,7 +840,7 @@ export function NewAnalysisView({ onRunPipeline, onNavigateHome }: NewAnalysisVi
                       Choose Image File
                     </button>
                     <span className="text-[10px] text-gray-500 font-mono mt-2">
-                      GeoTIFF · PNG · JPG (Up to 500MB)
+                      GeoTIFF · PNG · JPG (Up to 100 MB)
                     </span>
                   </div>
                 )}
@@ -860,12 +881,13 @@ export function NewAnalysisView({ onRunPipeline, onNavigateHome }: NewAnalysisVi
                           </p>
                           <p className="text-[10px] font-mono text-gray-400">{slot2.size}</p>
                           <span className="text-[9px] font-mono text-emerald-400">
-                            ✓ GEOSPATIAL PAYLOAD VERIFIED
+                            {slot2.isDemo ? 'DEMO SCENE LOADED' : 'FILE SELECTED · VALIDATES ON UPLOAD'}
                           </span>
                         </div>
                       </div>
                       <button
                         onClick={() => handleRemoveSlot(2)}
+                        aria-label="Remove second image"
                         className="p-1.5 rounded-md bg-gray-800 hover:bg-red-950/60 text-gray-400 hover:text-red-400 transition-colors cursor-pointer"
                       >
                         <X className="w-4 h-4" />
@@ -903,7 +925,7 @@ export function NewAnalysisView({ onRunPipeline, onNavigateHome }: NewAnalysisVi
                         Choose Image File
                       </button>
                       <span className="text-[10px] text-gray-500 font-mono mt-2">
-                        GeoTIFF · PNG · JPG (Up to 500MB)
+                        GeoTIFF · PNG · JPG (Up to 100 MB)
                       </span>
                     </div>
                   )}
@@ -955,40 +977,20 @@ export function NewAnalysisView({ onRunPipeline, onNavigateHome }: NewAnalysisVi
                   <span>↵ Press Enter to submit · Shift+Enter for new line</span>
 
                   <div className="flex items-center gap-2">
-                    {/* Voice input stub */}
                     <button
                       type="button"
-                      onClick={() => setIsRecordingVoice(!isRecordingVoice)}
-                      title="Voice query input"
-                      className={`p-1.5 rounded transition-colors cursor-pointer ${
-                        isRecordingVoice
-                          ? "bg-red-950 text-red-400 border border-red-500/50 animate-pulse"
-                          : "hover:text-gray-200 hover:bg-gray-800"
-                      }`}
+                      disabled
+                      aria-label="Voice input unavailable; type your question"
+                      title="Voice transcription is not configured. Type your question."
+                      className="p-1.5 rounded text-gray-500 cursor-not-allowed"
                     >
                       <Mic className="w-3.5 h-3.5" />
                     </button>
-
-                    {/* Language selector chip */}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSelectedLanguage(
-                          selectedLanguage === "GB EN"
-                            ? "IN HI"
-                            : selectedLanguage === "IN HI"
-                            ? "FR FR"
-                            : "GB EN"
-                        )
-                      }
-                      className="flex items-center gap-1 px-2 py-0.5 rounded border border-gray-700 bg-gray-800/60 hover:border-gray-600 text-[10px] cursor-pointer"
-                    >
-                      <Globe className="w-3 h-3 text-cyan-400" />
-                      <span>{selectedLanguage}</span>
-                    </button>
+                    <span className="text-gray-300">Text query</span>
 
                     {/* Submit Icon Button */}
                     <button
+                      aria-label="Run investigation"
                       type="button"
                       disabled={!isFormValid}
                       onClick={() => {
@@ -1039,7 +1041,7 @@ export function NewAnalysisView({ onRunPipeline, onNavigateHome }: NewAnalysisVi
 
           {/* 8. PREREQUISITES / VALIDATION BANNER */}
           {!isFormValid && (
-            <div className="p-4 rounded-xl border-l-4 border-l-amber-500 border border-[#1F2937] bg-amber-950/20 flex items-start gap-3 animate-in fade-in-50">
+            <div className="p-4 rounded-xl border border-amber-500/40 bg-amber-950/20 flex items-start gap-3 animate-in fade-in-50">
               <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
               <div className="space-y-1">
                 <h4 className="text-xs font-bold font-mono text-amber-300 uppercase tracking-wider">

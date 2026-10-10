@@ -1,406 +1,322 @@
-"""Authentication, Verification & Security Clearance API for BHUVISION.
-
-Supports:
-- Google OAuth 2.0 Token Verification & Single-Sign-On (SSO)
-- Email & Password Registration + Login with JWT session tokens
-- Phone SMS 6-Digit OTP Dispatch & Cryptographic Verification
-- Military & Remote Sensing Security Clearance Verification (ISRO / DRDO / NDRF)
-"""
-
+"""Verified identity with Argon2 passwords and revocable, durable sessions."""
 from __future__ import annotations
-
-import hashlib
-import hmac
-import os
-import random
-import time
+import hashlib, hmac, secrets, smtplib, ssl, time, uuid
+from email.message import EmailMessage
+from datetime import datetime, timezone
 from typing import Literal
-
-from fastapi import APIRouter, Header, HTTPException, status
-from pydantic import BaseModel, Field
-
+import httpx
+from fastapi import APIRouter, HTTPException, Request, Response
+from pydantic import BaseModel, Field, field_validator
+from pwdlib import PasswordHash
+from sqlalchemy import select, delete, update
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from starlette.concurrency import run_in_threadpool
 from ..core.config import settings
-from ..core.logging import get_logger
+from ..core.database import DurableStore, Record, engine
 
-logger = get_logger("api.auth")
+router = APIRouter(prefix='/auth', tags=['Authentication & Security Clearance'])
+USERS = DurableStore('users', global_scope=True)
+SESSIONS = DurableStore('sessions', global_scope=True)
+CHALLENGES = DurableStore('challenges', global_scope=True)
+PHONES = DurableStore('verified_phones', global_scope=True)
+hasher = PasswordHash.recommended()
+DUMMY_HASH = hasher.hash('timing-normalization-not-a-user-password')
+COOKIE = 'satquery_session'
 
-router = APIRouter(prefix="/auth", tags=["Authentication & Security Clearance"])
+def digest(value: str) -> str:
+    return hmac.new(settings.auth_pepper.encode(), value.encode(), hashlib.sha256).hexdigest()
 
-# In-memory user store for demo & operational simulation (persists during process lifetime)
-# In production, this binds to PostgreSQL / Redis / Supabase / Firebase Auth
-import sqlite3
-import json
+def public_user(user):
+    return {k: v for k, v in user.items() if k not in {'password_hash', 'google_sub'}}
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "auth.db")
+def session_token(request: Request) -> str:
+    auth = request.headers.get('authorization', '')
+    return auth[7:] if auth.startswith('Bearer ') else request.cookies.get(COOKIE, '')
 
-def init_db():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                email TEXT PRIMARY KEY,
-                data TEXT
-            )
-        ''')
-init_db()
+def resolve_user(request: Request):
+    token = session_token(request)
+    session = SESSIONS.get(digest(token)) if token else None
+    if not session or session['expires'] <= time.time():
+        return None
+    return USERS.get(session['email'])
 
-class SQLiteDict:
-    def __contains__(self, key):
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.execute("SELECT 1 FROM users WHERE email=?", (key,))
-            return cursor.fetchone() is not None
+def require_user(request: Request):
+    user = resolve_user(request)
+    if user is None:
+        raise HTTPException(401, 'Sign in to access this workspace.')
+    return user
 
-    def __getitem__(self, key):
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.execute("SELECT data FROM users WHERE email=?", (key,))
-            row = cursor.fetchone()
-            if row:
-                return json.loads(row[0])
-            raise KeyError(key)
+def create_user(email, name, **extra):
+    user = dict(id=uuid.uuid4().hex, email=email, name=name, organization='', phone='', role='Analyst',
+                clearance_level='PUBLIC', email_verified=False, phone_verified=False, google_verified=False,
+                auth_providers=['email'], created_at=datetime.now(timezone.utc).isoformat(), guest=False, **extra)
+    try:
+        with Session(engine) as db, db.begin():
+            db.add(Record(namespace='users', owner='system', key=email, value=user))
+    except IntegrityError:
+        raise HTTPException(409, 'Account already exists. Sign in or reset your password.')
+    return user
 
-    def __setitem__(self, key, value):
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO users (email, data) VALUES (?, ?)",
-                (key, json.dumps(value))
-            )
-            conn.commit()
-
-    def __delitem__(self, key):
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.execute("DELETE FROM users WHERE email=?", (key,))
-            conn.commit()
-
-    def pop(self, key, default=None):
-        val = self.get(key, default)
-        try:
-            del self[key]
-        except KeyError:
-            pass
-        return val
-
-    def get(self, key, default=None):
-        try:
-            return self[key]
-        except KeyError:
-            return default
-
-    def values(self):
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.execute("SELECT data FROM users")
-            return [json.loads(row[0]) for row in cursor.fetchall()]
-
-DEMO_USERS_DB = SQLiteDict()
-
-if "ayush@isro.gov.in" not in DEMO_USERS_DB:
-    DEMO_USERS_DB["ayush@isro.gov.in"] = {
-        "id": "usr_isro_001",
-        "name": "Ayush Sarkar",
-        "email": "ayush@isro.gov.in",
-        "phone": "+919876543210",
-        "organization": "ISRO Space Applications Centre (SAC)",
-        "clearance_level": "LEVEL_4_TOP_SECRET",
-        "role": "Lead Spatial Intelligence Architect",
-        "auth_providers": ["google", "email", "phone"],
-        "email_verified": True,
-        "phone_verified": True,
-        "google_verified": True,
-        "password_hash": hashlib.sha256("IsroBankai2026!".encode()).hexdigest(),
-        "created_at": "2026-09-01T00:00:00Z",
-    }
-
-# OTP storage: phone -> { "otp": "123456", "expires_at": float, "attempts": int }
-ACTIVE_OTPS: dict[str, dict] = {}
-
-# Session tokens: token_str -> user_dict
-ACTIVE_SESSIONS: dict[str, dict] = {}
-
-
-# --- Request & Response Schemas ---
-
-class EmailRegisterRequest(BaseModel):
-    name: str = Field(..., min_length=2, max_length=100)
-    email: str = Field(..., min_length=5, max_length=120)
-    password: str = Field(..., min_length=8)
-    phone: str | None = None
-    organization: str = "ISRO"
-    clearance_level: Literal["LEVEL_1_PUBLIC", "LEVEL_2_CONFIDENTIAL", "LEVEL_3_SECRET", "LEVEL_4_TOP_SECRET"] = "LEVEL_2_CONFIDENTIAL"
-
+def issue_session(user, response: Response):
+    token = secrets.token_urlsafe(48)
+    seconds = 3600 if user.get('guest') else settings.session_hours * 3600
+    SESSIONS[digest(token)] = {'email': user['email'], 'expires': time.time() + seconds}
+    response.set_cookie(COOKIE, token, max_age=seconds, httponly=True, secure=settings.cookie_secure, samesite='lax', path='/')
+    response.headers['Cache-Control'] = 'no-store'
+    return {'access_token': token, 'token_type': 'Bearer', 'expires_in_seconds': seconds, 'user': public_user(user)}
 
 class EmailLoginRequest(BaseModel):
-    email: str = Field(..., min_length=5, max_length=120)
-    password: str = Field(..., min_length=6)
+    email: str = Field(min_length=5, max_length=120)
+    password: str = Field(min_length=1, max_length=256)
+    @field_validator('email')
+    @classmethod
+    def email_valid(cls, value):
+        import re
+        value = value.strip().lower()
+        if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', value):
+            raise ValueError('Enter a valid email address')
+        return value
 
+class EmailRegisterRequest(EmailLoginRequest):
+    name: str = Field(min_length=2, max_length=120)
+    organization: str = Field(default='', max_length=160)
+    phone: str = Field(default='', max_length=16)
+    clearance_level: str = 'PUBLIC'
+    @field_validator('password')
+    @classmethod
+    def strong_password(cls, value):
+        if len(value) < 12:
+            raise ValueError('Use at least 12 characters')
+        return value
 
 class GoogleAuthRequest(BaseModel):
-    credential: str = Field(..., description="Google ID Token or JWT from Google Sign-In button")
+    credential: str = Field(min_length=1, max_length=12000)
     client_id: str | None = None
 
-
 class SendOtpRequest(BaseModel):
-    phone: str = Field(..., min_length=10, max_length=16, json_schema_extra={"example": "+919876543210"})
-    purpose: Literal["login", "verification", "clearance"] = "verification"
-
+    phone: str = Field(pattern=r'^\+[1-9][0-9]{7,14}$')
+    purpose: Literal['login', 'verification', 'clearance'] = 'verification'
 
 class VerifyOtpRequest(BaseModel):
-    phone: str = Field(..., json_schema_extra={"example": "+919876543210"})
-    otp: str = Field(..., min_length=6, max_length=6, json_schema_extra={"example": "849201"})
+    phone: str = Field(pattern=r'^\+[1-9][0-9]{7,14}$')
+    otp: str = Field(pattern=r'^\d{6}$')
+    purpose: Literal['login', 'verification'] | None = None
 
+class EmailChallengeRequest(BaseModel):
+    email: str = Field(min_length=5, max_length=120)
 
-class AuthTokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "Bearer"
-    expires_in_seconds: int = 86400
-    user: dict
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
 
+class PasswordResetRequest(VerifyEmailRequest):
+    password: str = Field(min_length=12, max_length=256)
 
-# --- Endpoints ---
+def make_challenge(key, email, code, ttl=900):
+    CHALLENGES[key] = {'email': email, 'hash': digest(code), 'expires': time.time() + ttl, 'attempts': 0}
 
-@router.post("/register", response_model=AuthTokenResponse)
-async def register_with_email(req: EmailRegisterRequest):
-    """Register a new spatial analyst with Email, Password, and Organization Clearance."""
-    email_clean = req.email.lower().strip()
-    if email_clean in DEMO_USERS_DB:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="An account with this email address already exists. Please sign in.",
-        )
-
-    # Hash password with SHA-256
-    pwd_hash = hashlib.sha256(req.password.encode()).hexdigest()
-    user_id = f"usr_{int(time.time())}_{random.randint(100, 999)}"
-
-    user = {
-        "id": user_id,
-        "name": req.name,
-        "email": email_clean,
-        "phone": req.phone or "",
-        "organization": req.organization,
-        "clearance_level": req.clearance_level,
-        "role": "Field Analyst",
-        "auth_providers": ["email"],
-        "email_verified": True,
-        "phone_verified": bool(req.phone),
-        "google_verified": False,
-        "password_hash": pwd_hash,
-        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    }
-    DEMO_USERS_DB[email_clean] = user
-
-    # Create session token
-    token = f"bhuvision_jwt_{hashlib.sha256(f'{user_id}_{time.time()}'.encode()).hexdigest()}"
-    ACTIVE_SESSIONS[token] = user
-
-    logger.info("user_registered", email=email_clean, org=req.organization, clearance=req.clearance_level)
-
-    # Sanitize user before returning
-    safe_user = {k: v for k, v in user.items() if k != "password_hash"}
-    return AuthTokenResponse(access_token=token, user=safe_user)
-
-
-@router.post("/login", response_model=AuthTokenResponse)
-async def login_with_email(req: EmailLoginRequest):
-    """Sign in with Email and Password."""
-    email_clean = req.email.lower().strip()
-    user = DEMO_USERS_DB.get(email_clean)
-
-    pwd_hash = hashlib.sha256(req.password.encode()).hexdigest()
-
-    # If demo user doesn't exist yet, automatically provision for testing
-    if not user:
-        # Create instant demo profile
-        user_id = f"usr_{int(time.time())}"
-        user = {
-            "id": user_id,
-            "name": email_clean.split("@")[0].replace(".", " ").title(),
-            "email": email_clean,
-            "phone": "+919876543210",
-            "organization": "Indian Space Research Organisation (ISRO)",
-            "clearance_level": "LEVEL_4_TOP_SECRET",
-            "role": "Defense Spatial Analyst",
-            "auth_providers": ["email"],
-            "email_verified": True,
-            "phone_verified": True,
-            "google_verified": False,
-            "password_hash": pwd_hash,
-            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        }
-        DEMO_USERS_DB[email_clean] = user
-    elif user.get("password_hash") and user["password_hash"] != pwd_hash:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password. Please verify credentials.",
-        )
-
-    uid = user["id"]
-    token = f"bhuvision_jwt_{hashlib.sha256(f'{uid}_{time.time()}'.encode()).hexdigest()}"
-    ACTIVE_SESSIONS[token] = user
-
-    safe_user = {k: v for k, v in user.items() if k != "password_hash"}
-    return AuthTokenResponse(access_token=token, user=safe_user)
-
-
-@router.post("/google", response_model=AuthTokenResponse)
-async def login_with_google(req: GoogleAuthRequest):
-    """Authenticate or register seamlessly via Google One-Tap / OAuth 2.0 token."""
-    # In production with google-auth library:
-    # id_info = id_token.verify_oauth2_token(req.credential, requests.Request(), GOOGLE_CLIENT_ID)
-    # email = id_info['email']
-    # name = id_info.get('name', 'Google User')
-
-    # Parse credential or simulated token
-    token_str = req.credential.strip()
-    simulated_email = "ayush.sarkar@google-sso.isro.gov.in"
-    simulated_name = "Ayush Sarkar (Google Verified)"
-
-    # Look up or create Google user
-    if simulated_email not in DEMO_USERS_DB:
-        user_id = f"usr_goog_{int(time.time())}"
-        DEMO_USERS_DB[simulated_email] = {
-            "id": user_id,
-            "name": simulated_name,
-            "email": simulated_email,
-            "phone": "+919876543210",
-            "organization": "ISRO Remote Sensing Operations (RSOP)",
-            "clearance_level": "LEVEL_4_TOP_SECRET",
-            "role": "Mission Commander",
-            "auth_providers": ["google", "email", "phone"],
-            "email_verified": True,
-            "phone_verified": True,
-            "google_verified": True,
-            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        }
-
-    user = DEMO_USERS_DB[simulated_email]
-    uid = user["id"]
-    token = f"bhuvision_google_jwt_{hashlib.sha256(f'{uid}_{time.time()}'.encode()).hexdigest()}"
-    ACTIVE_SESSIONS[token] = user
-
-    logger.info("google_auth_success", email=simulated_email)
-    safe_user = {k: v for k, v in user.items() if k != "password_hash"}
-    return AuthTokenResponse(access_token=token, user=safe_user)
-
-
-@router.post("/otp/send")
-async def send_phone_otp(req: SendOtpRequest):
-    """Generate and dispatch a cryptographic 6-digit SMS OTP to any mobile phone."""
-    phone_clean = req.phone.strip().replace(" ", "").replace("-", "")
-
-    # Generate a secure 6-digit numeric PIN
-    generated_otp = f"{random.randint(100000, 999999)}"
-    expires_at = time.time() + 300.0  # 5 minutes validity
-
-    # Purge expired OTPs to keep memory footprint lean
-    now = time.time()
-    expired = [k for k, v in ACTIVE_OTPS.items() if v.get("expires_at", 0) < now]
-    for exp_k in expired:
-        del ACTIVE_OTPS[exp_k]
-
-    ACTIVE_OTPS[phone_clean] = {
-        "otp": generated_otp,
-        "expires_at": expires_at,
-        "attempts": 0,
-        "purpose": req.purpose,
-    }
-
-    logger.info("otp_dispatched", phone=phone_clean, otp=generated_otp, purpose=req.purpose)
-
-    return {
-        "status": "success",
-        "message": f"6-digit SMS verification code successfully dispatched to {phone_clean}",
-        "phone": phone_clean,
-        "expires_in_seconds": 300,
-        "demo_otp_hint": generated_otp,  # Displayed in UI for instant evaluator testing
-    }
-
-
-@router.post("/otp/verify")
-async def verify_phone_otp(req: VerifyOtpRequest):
-    """Verify a 6-digit SMS code and upgrade user's phone verification status."""
-    phone_clean = req.phone.strip().replace(" ", "").replace("-", "")
-    entry = ACTIVE_OTPS.get(phone_clean)
-
-    # Master hackathon bypass code '123456' for instant judge evaluation
-    if req.otp == "123456" or (entry and entry["otp"] == req.otp and time.time() <= entry["expires_at"]):
-        # Find or create verified profile
-        user = next((u for u in DEMO_USERS_DB.values() if u.get("phone") == phone_clean), None)
-        if not user:
-            user = {
-                "id": f"usr_phone_{int(time.time())}",
-                "name": f"Mobile Analyst ({phone_clean[-4:]})",
-                "email": f"analyst_{phone_clean[-4:]}@bhuvision.internal",
-                "phone": phone_clean,
-                "organization": "National Disaster Response Force (NDRF)",
-                "clearance_level": "LEVEL_3_SECRET",
-                "role": "Tactical Field Operator",
-                "auth_providers": ["phone"],
-                "email_verified": False,
-                "phone_verified": True,
-                "google_verified": False,
-                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            }
-            DEMO_USERS_DB[user["email"]] = user
+def consume_challenge(key, code):
+    with engine.connect() as conn:
+        if engine.dialect.name == 'sqlite':
+            conn.exec_driver_sql('BEGIN IMMEDIATE')
         else:
-            user["phone_verified"] = True
+            conn.begin()
+        try:
+            conditions = (Record.namespace == 'challenges', Record.owner == 'system', Record.key == key)
+            row = conn.execute(select(Record.value).where(*conditions).with_for_update()).scalar_one_or_none()
+            valid = row and row['expires'] > time.time() and row['attempts'] < 5 and hmac.compare_digest(row['hash'], digest(code))
+            if valid:
+                conn.execute(delete(Record).where(*conditions))
+            elif row:
+                conn.execute(update(Record).where(*conditions).values(value={**row, 'attempts': row['attempts'] + 1}))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    if not valid:
+        raise HTTPException(400, 'Invalid, expired, or already used verification code.')
+    return row['email']
 
-        # Generate JWT session
-        uid = user["id"]
-        token = f"bhuvision_otp_jwt_{hashlib.sha256(f'{uid}_{time.time()}'.encode()).hexdigest()}"
-        ACTIVE_SESSIONS[token] = user
+def send_email(email, subject, token):
+    if settings.development_verification_codes and settings.environment != 'production':
+        return {'development_token': token, 'delivery': 'local-development-only'}
+    if not settings.smtp_host:
+        raise HTTPException(503, 'Email delivery is not configured. Contact the workspace administrator.')
+    msg = EmailMessage()
+    msg['From'], msg['To'], msg['Subject'] = settings.smtp_from, email, subject
+    msg.set_content(f'{subject}\n\nEnter this single-use code in Satquery AI:\n{token}\n\nExpires in 15 minutes. If you did not request it, ignore this message.')
+    try:
+        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as smtp:
+            smtp.starttls(context=ssl.create_default_context())
+            if settings.smtp_username:
+                smtp.login(settings.smtp_username, settings.smtp_password or '')
+            smtp.send_message(msg)
+    except (OSError, smtplib.SMTPException):
+        raise HTTPException(503, 'Email delivery is temporarily unavailable.')
+    return {'delivery': 'email'}
 
-        if phone_clean in ACTIVE_OTPS:
-            del ACTIVE_OTPS[phone_clean]
+@router.get('/config')
+def auth_config():
+    return {'public_preview': settings.environment == 'preview',
+            'google_client_id': settings.google_client_id if settings.environment != 'preview' else None, 'demo_guest': settings.allow_demo_guest and settings.environment != 'production',
+            'email_delivery': bool(settings.smtp_host), 'sms_delivery': bool(settings.twilio_account_sid),
+            'development_codes': settings.development_verification_codes and settings.environment != 'production'}
 
-        safe_user = {k: v for k, v in user.items() if k != "password_hash"}
-        return {
-            "status": "success",
-            "verified": True,
-            "message": "Phone number successfully verified. Security clearance elevated.",
-            "access_token": token,
-            "user": safe_user,
-        }
+@router.post('/register')
+def register_with_email(req: EmailRegisterRequest, response: Response):
+    user = create_user(req.email, req.name, password_hash=hasher.hash(req.password))
+    user['organization'] = req.organization
+    USERS[req.email] = user
+    return issue_session(user, response)
 
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Invalid or expired verification code. Please check SMS or click Resend.",
-    )
+@router.post('/login')
+def login_with_email(req: EmailLoginRequest, response: Response):
+    user = USERS.get(req.email)
+    valid = hasher.verify(req.password, user.get('password_hash', DUMMY_HASH) if user else DUMMY_HASH)
+    if not user or not user.get('password_hash') or not valid:
+        raise HTTPException(401, 'Invalid email or password.')
+    return issue_session(user, response)
 
+@router.post('/guest-token')
+def guest_token(response: Response):
+    if not settings.allow_demo_guest or settings.environment == 'production':
+        raise HTTPException(403, 'Guest sessions are disabled.')
+    email = f'guest-{uuid.uuid4().hex}@demo.invalid'
+    user = create_user(email, 'Demo explorer')
+    user.update(guest=True, role='Demo explorer', auth_providers=['guest'])
+    USERS[email] = user
+    return issue_session(user, response)
 
-@router.get("/me")
-async def get_current_user_profile(authorization: str | None = Header(None)):
-    """Retrieve the active authenticated user profile and security clearance credentials."""
-    if not authorization:
-        # Default guest / evaluator profile
-        return {
-            "authenticated": False,
-            "guest": True,
-            "user": {
-                "name": "Defense Guest Evaluator",
-                "clearance_level": "LEVEL_2_CONFIDENTIAL",
-                "organization": "SIH 2026 Evaluation Bench",
-                "role": "Public Observer",
-            }
-        }
-
-    token = authorization.replace("Bearer ", "").strip()
-    user = ACTIVE_SESSIONS.get(token)
+@router.post('/google')
+async def login_with_google(req: GoogleAuthRequest, response: Response):
+    if not settings.google_client_id:
+        raise HTTPException(503, 'Google sign-in is not configured.')
+    from google.oauth2 import id_token
+    from google.auth.transport.requests import Request as GoogleRequest
+    try:
+        info = await run_in_threadpool(id_token.verify_oauth2_token, req.credential, GoogleRequest(), settings.google_client_id)
+        if not info.get('email_verified') or not info.get('sub'):
+            raise ValueError('Unverified identity')
+    except Exception:
+        raise HTTPException(401, 'Google identity could not be verified.')
+    email = info['email'].lower()
+    user = USERS.get(email)
+    if user and user.get('google_sub') != info['sub']:
+        raise HTTPException(409, 'An account exists with this email. Use its original sign-in method.')
     if not user:
-        # Check if default demo user
-        user = list(DEMO_USERS_DB.values())[0]
+        user = create_user(email, info.get('name', 'Analyst'), google_sub=info['sub'])
+        user.update(email_verified=True, google_verified=True, auth_providers=['google'])
+        USERS[email] = user
+    return issue_session(user, response)
 
-    safe_user = {k: v for k, v in user.items() if k != "password_hash"}
-    return {
-        "authenticated": True,
-        "guest": False,
-        "user": safe_user,
-    }
+@router.post('/email/send')
+def send_email_verification(request: Request):
+    user = require_user(request)
+    if user.get('guest'):
+        raise HTTPException(403, 'Create an account to verify an email address.')
+    token = secrets.token_urlsafe(32)
+    delivery = send_email(user['email'], 'Verify your Satquery AI email', token)
+    make_challenge('email:' + digest(token), user['email'], token)
+    return {'message': 'Verification requested.', **delivery}
 
+@router.post('/email/verify')
+def verify_email(req: VerifyEmailRequest, request: Request):
+    user = require_user(request)
+    challenge = CHALLENGES.get('email:' + digest(req.token))
+    if not challenge or challenge['email'] != user['email']:
+        raise HTTPException(400, 'Invalid verification code.')
+    email = consume_challenge('email:' + digest(req.token), req.token)
+    user = USERS[email]
+    user['email_verified'] = True
+    USERS[email] = user
+    return {'user': public_user(user), 'verified': True}
 
-@router.post("/logout")
-async def logout(authorization: str | None = Header(None)):
-    """End active user session."""
-    if authorization:
-        token = authorization.replace("Bearer ", "").strip()
-        if token in ACTIVE_SESSIONS:
-            del ACTIVE_SESSIONS[token]
-    return {"status": "success", "message": "Logged out successfully."}
+@router.post('/password/forgot')
+def forgot_password(req: EmailChallengeRequest):
+    if not settings.smtp_host and not (settings.development_verification_codes and settings.environment != 'production'):
+        raise HTTPException(503, 'Email delivery is not configured.')
+    user = USERS.get(req.email.strip().lower())
+    delivery = {}
+    if user and user.get('password_hash'):
+        token = secrets.token_urlsafe(32)
+        delivery = send_email(user['email'], 'Reset your Satquery AI password', token)
+        make_challenge('reset:' + digest(token), user['email'], token)
+    return {'message': 'If the account is eligible, a reset code has been sent.', **({'development_token': delivery['development_token']} if 'development_token' in delivery else {})}
+
+@router.post('/password/reset')
+def reset_password(req: PasswordResetRequest, response: Response):
+    email = consume_challenge('reset:' + digest(req.token), req.token)
+    user = USERS[email]
+    user['password_hash'] = hasher.hash(req.password)
+    USERS[email] = user
+    for key in list(SESSIONS):
+        if SESSIONS[key]['email'] == email:
+            del SESSIONS[key]
+    response.delete_cookie(COOKIE, path='/')
+    return {'message': 'Password updated. Sign in again on each device.'}
+
+@router.post('/otp/send')
+async def send_phone_otp(req: SendOtpRequest, request: Request):
+    if req.purpose == 'login':
+        binding = PHONES.get(digest(req.phone))
+        user = USERS.get(binding['email']) if binding else None
+        if not user or not user.get('phone_verified') or user.get('phone') != req.phone:
+            return {'message': 'If this phone is verified on an account, a code has been sent.', 'expires_in_seconds': 300}
+    else:
+        user = require_user(request)
+    if user.get('guest'):
+        raise HTTPException(403, 'Create an account first.')
+    code = f'{secrets.randbelow(1000000):06d}'
+    delivery = {}
+    if settings.development_verification_codes and settings.environment != 'production':
+        delivery['development_code'] = code
+    elif settings.twilio_account_sid and settings.twilio_auth_token and settings.twilio_from:
+        async with httpx.AsyncClient(timeout=15) as client:
+            res = await client.post(f'https://api.twilio.com/2010-04-01/Accounts/{settings.twilio_account_sid}/Messages.json',
+                auth=(settings.twilio_account_sid, settings.twilio_auth_token), data={'From': settings.twilio_from, 'To': req.phone, 'Body': f'Satquery AI code: {code}. Expires in 5 minutes.'})
+        if res.status_code >= 300:
+            raise HTTPException(503, 'SMS delivery is temporarily unavailable.')
+    else:
+        raise HTTPException(503, 'SMS delivery is not configured.')
+    key = f'phone-login:{digest(req.phone)}' if req.purpose == 'login' else f'phone:{user["id"]}:{req.phone}'
+    make_challenge(key, user['email'], code, 300)
+    return {'message': 'Verification code requested.', 'expires_in_seconds': 300, **delivery}
+
+@router.post('/otp/verify')
+def verify_phone_otp(req: VerifyOtpRequest, request: Request, response: Response):
+    if req.purpose == 'login' or (req.purpose is None and resolve_user(request) is None):
+        email = consume_challenge(f'phone-login:{digest(req.phone)}', req.otp)
+        binding = PHONES.get(digest(req.phone))
+        user = USERS.get(email)
+        if not binding or binding['email'] != email or not user or user.get('phone') != req.phone or not user.get('phone_verified'):
+            raise HTTPException(400, 'Phone sign-in is no longer available. Sign in with email.')
+        return {'verified': True, **issue_session(user, response)}
+    user = require_user(request)
+    consume_challenge(f'phone:{user["id"]}:{req.phone}', req.otp)
+    old_phone = user.get('phone') if user.get('phone_verified') else None
+    user.update(phone=req.phone, phone_verified=True)
+    try:
+        with Session(engine) as db, db.begin():
+            binding_key = ('verified_phones', 'system', digest(req.phone))
+            binding = db.get(Record, binding_key, with_for_update=True)
+            if binding and binding.value['email'] != user['email']:
+                raise HTTPException(409, 'This phone is already linked to an account.')
+            if not binding:
+                db.add(Record(namespace=binding_key[0], owner='system', key=binding_key[2], value={'email':user['email']}))
+            if old_phone and old_phone != req.phone:
+                db.execute(delete(Record).where(Record.namespace=='verified_phones', Record.owner=='system', Record.key==digest(old_phone)))
+            db.execute(update(Record).where(Record.namespace=='users', Record.owner=='system', Record.key==user['email']).values(value=user))
+    except IntegrityError:
+        raise HTTPException(409, 'This phone was linked concurrently. Request a new code.')
+    return {'verified': True, **issue_session(user, response)}
+
+@router.get('/me')
+def get_current_user_profile(request: Request):
+    user = require_user(request)
+    return {'authenticated': True, 'guest': user.get('guest', False), 'user': public_user(user)}
+
+@router.post('/logout')
+def logout(request: Request, response: Response):
+    SESSIONS.pop(digest(session_token(request)), None)
+    response.delete_cookie(COOKIE, path='/')
+    return {'status': 'success'}

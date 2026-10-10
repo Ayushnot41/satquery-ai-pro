@@ -7,6 +7,7 @@ from app.main import app
 async def test_benchmark_protocol_and_run():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         # 1. Check protocol initial
         resp = await client.get("/api/benchmark/protocol")
         assert resp.status_code == 200
@@ -36,6 +37,8 @@ async def test_benchmark_protocol_and_run():
 async def test_investigation_history_and_cache():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
+        await client.post('/api/investigate/demo-history')
         # 1. Get history list
         resp = await client.get("/api/investigate")
         assert resp.status_code == 200
@@ -48,6 +51,8 @@ async def test_investigation_history_and_cache():
         assert resp_clear.status_code == 200
         assert resp_clear.json()["status"] == "cleared"
 
+        assert (await client.get('/api/investigate')).json() == []
+        await client.post('/api/investigate/demo-history')
         # 3. Delete an item
         resp_del = await client.delete("/api/investigate/analysis-004")
         assert resp_del.status_code == 200

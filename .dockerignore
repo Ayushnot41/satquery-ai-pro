@@ -33,3 +33,12 @@ htmlcov
 *.log
 logs
 scratch
+.tools
+.runtime
+.npm-cache
+.pnpm-store
+data
+backend/data
+*.db
+*.db-shm
+*.db-wal

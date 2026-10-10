@@ -1,14 +1,15 @@
 {
-  "name": "bhuvision-frontend",
-  "version": "0.1.0",
+  "name": "satquery-ai-pro",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "serve": "node server.js",
-    "preview": "node server.js",
+    "serve": "next dev -p 3010",
+    "preview": "node ../scripts/serve-frontend.cjs",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "start": "node ../scripts/serve-frontend.cjs",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -16,7 +17,7 @@
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.475.0",
-    "next": "15.2.1",
+    "next": "15.5.27",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.0.1",
@@ -30,5 +31,10 @@
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "^5"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.28"
+    }
   }
 }

@@ -70,3 +70,10 @@ scratch/
 backend/checkpoints/
 *.pt
 *.tsbuildinfo
+.tools/
+.pnpm-store/
+.npm-cache/
+.runtime/
+*.db
+*.db-shm
+*.db-wal

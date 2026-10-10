@@ -8,6 +8,7 @@ from app.main import app
 @pytest.mark.asyncio
 async def test_metric_detail_vqa():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         res = await client.get("/api/benchmark/metric/vqa_acc")
         assert res.status_code == 200
         data = res.json()
@@ -22,6 +23,7 @@ async def test_metric_detail_vqa():
 @pytest.mark.asyncio
 async def test_metric_detail_change_detection():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         res = await client.get("/api/benchmark/metric/cd_f1")
         assert res.status_code == 200
         data = res.json()
@@ -34,6 +36,7 @@ async def test_metric_detail_change_detection():
 @pytest.mark.asyncio
 async def test_benchmark_test_sample():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         res = await client.post("/api/benchmark/test-sample?metric_id=vqa_acc")
         assert res.status_code == 200
         data = res.json()

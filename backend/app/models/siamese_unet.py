@@ -176,9 +176,10 @@ def ensure_checkpoint_exists(target_path: Optional[Path] = None) -> Path:
 
 
 def is_siamese_available() -> bool:
-    """Check if model checkpoint is present and readable."""
-    ckpt = ensure_checkpoint_exists()
-    return ckpt.exists() and ckpt.stat().st_size > 100000
+    """Report availability only for an explicitly supplied model checkpoint."""
+    import os
+    configured = os.environ.get('VERIFIED_SIAMESE_CHECKPOINT')
+    return bool(TORCH_AVAILABLE and configured and Path(configured).is_file())
 
 
 # ============================================================================
@@ -212,8 +213,6 @@ def run_siamese_inference(
     
     Returns structured change mask, difference heatmap, and quantitative metrics.
     """
-    ensure_checkpoint_exists()
-    
     orig_h, orig_w = image_before.shape[:2]
     t1_norm = _preprocess_image(image_before, (256, 256))
     t2_norm = _preprocess_image(image_after, (256, 256))
@@ -221,7 +220,7 @@ def run_siamese_inference(
     mode_used = "scipy_vectorized"
     prob_map = None
 
-    if TORCH_AVAILABLE and torch is not None:
+    if TORCH_AVAILABLE and torch is not None and __import__('os').environ.get('VERIFIED_SIAMESE_CHECKPOINT'):
         try:
             # Build PyTorch tensors (1, C, H, W)
             t1_tensor = torch.from_numpy(t1_norm).permute(2, 0, 1).unsqueeze(0).float()
@@ -229,6 +228,10 @@ def run_siamese_inference(
 
             dev = torch.device("cuda" if torch.cuda.is_available() and device == "cuda" else "cpu")
             model = SiameseUNet(in_channels=3, out_channels=1).to(dev)
+            checkpoint = torch.load(__import__('os').environ['VERIFIED_SIAMESE_CHECKPOINT'], map_location=dev, weights_only=True)
+            state = checkpoint.get('state_dict', checkpoint)
+            # This guarded branch uses torch.nn.Module, not the CPU-only fallback class.
+            model.load_state_dict(state, strict=True)  # pylint: disable=no-member
             model.eval()
 
             t1_tensor = t1_tensor.to(dev)
@@ -279,8 +282,10 @@ def run_siamese_inference(
         "confidence": round(mean_confidence, 3),
         "change_mask": binary_mask,
         "probability_map": prob_full,
-        "model_name": "Siamese-UNet-ResNet18-DeepChange",
-        "checkpoint_loaded": str(CHECKPOINT_PATH),
+        "model_name": "Siamese-UNet" if mode_used.startswith('torch') else "Classical spectral-gradient difference",
+        "trained_model_used": mode_used.startswith('torch'),
+        "checkpoint_loaded": __import__('os').environ.get('VERIFIED_SIAMESE_CHECKPOINT') if mode_used.startswith('torch') else None,
+        "confidence_is_calibrated": False,
         "inference_mode": mode_used,
         "total_changed_pixels": changed_pixels,
         "total_pixels": total_pixels,

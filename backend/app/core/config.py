@@ -16,7 +16,22 @@ class Settings(BaseSettings):
     app_version: str = "1.0.0"
     debug: bool = False
     log_level: str = "INFO"
-    cors_origins: str = "http://localhost:3000,http://localhost:8000"
+    cors_origins: str = "http://localhost:3010,http://127.0.0.1:3010,http://localhost:8010,http://127.0.0.1:8010"
+    environment: Literal["development", "test", "preview", "production"] = "development"
+    session_hours: int = 12
+    cookie_secure: bool = False
+    auth_pepper: str = "development-only-change-before-deployment"
+    allow_demo_guest: bool = True
+    development_verification_codes: bool = False
+    google_client_id: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str = "Satquery AI <no-reply@example.com>"
+    twilio_account_sid: str | None = None
+    twilio_auth_token: str | None = None
+    twilio_from: str | None = None
 
     # --- Primary LLM Router: OpenRouter ---
     openrouter_api_key: str | None = None
@@ -36,7 +51,7 @@ class Settings(BaseSettings):
 
     # --- VLM Primary (Agent 4 / GatewayBackend) ---
     vlm_model_name: str = "google/gemini-2.5-flash"
-    vlm_backend: Literal["gateway", "vllm", "local_lora", "demo"] = "gateway"
+    vlm_backend: Literal["gateway", "vllm", "local_lora", "demo"] = "demo"
     vllm_api_url: str = "http://localhost:8080/v1"
 
     # --- Astra / GPT-6 Astra Intelligence Gateway ---
@@ -61,7 +76,7 @@ class Settings(BaseSettings):
     copernicus_client_secret: str | None = None
 
     # --- Demo Mode ---
-    demo_mode: bool = False
+    demo_mode: bool = True
 
     # --- Storage ---
     upload_dir: str = "./data/uploads"

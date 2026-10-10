@@ -6,6 +6,7 @@ import {
   deleteInvestigation,
   clearInvestigationCache,
   investigationResponseToAnalysisResult,
+  investigationMode,
   InvestigationResponse,
 } from "../../lib/api";
 import { AnalysisResult, AnalysisMode } from "../../types/investigation";
@@ -33,6 +34,7 @@ export function AnalysisHistoryView({
       setItems(data);
     } catch (err) {
       console.error("Failed to load investigation history:", err);
+      setNotification("History could not be loaded. Check your connection and try again.");
     } finally {
       setIsLoading(false);
     }
@@ -43,18 +45,20 @@ export function AnalysisHistoryView({
   }, []);
 
   const handleClearCache = async () => {
+    if (!window.confirm('Clear all saved investigation reports in this workspace? This cannot be undone.')) return;
     try {
       await clearInvestigationCache();
-      setNotification("Telemetry cache cleared & reset to operational baseline.");
+      setNotification("Investigation history cleared.");
       setTimeout(() => setNotification(null), 3500);
       await loadHistory();
     } catch (err) {
-      console.error("Failed to clear cache:", err);
+      setNotification((err as Error).message);
     }
   };
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!window.confirm('Delete this saved report? This cannot be undone.')) return;
     try {
       const ok = await deleteInvestigation(id);
       if (ok) {
@@ -63,28 +67,18 @@ export function AnalysisHistoryView({
         setTimeout(() => setNotification(null), 3000);
       }
     } catch (err) {
-      console.error("Delete failed:", err);
+      setNotification((err as Error).message);
     }
   };
 
   const handleRowClick = (item: InvestigationResponse) => {
-    // Derive mode from imagery count or sensor
-    let mode: AnalysisMode = "single_image";
-    if (item.question.toLowerCase().includes("sar") || (item.answer && item.answer.toLowerCase().includes("sar"))) {
-      mode = "optical_sar";
-    } else if (
-      item.question.toLowerCase().includes("between these two") ||
-      item.question.toLowerCase().includes("change") ||
-      item.question.toLowerCase().includes("dates")
-    ) {
-      mode = "bi_temporal";
-    }
+    const mode = investigationMode(item);
 
     const res = investigationResponseToAnalysisResult(
       item,
       mode,
       item.question,
-      ["/static/uploads/img-59e929f6_Kolkata_SPOT_1354.jpg"],
+      undefined,
       "Telemetry Archive Inspection"
     );
     onSelectResult(res);
@@ -102,29 +96,21 @@ export function AnalysisHistoryView({
         second: "2-digit",
       });
     } catch {
-      return "09 Sept 2026, 19:48:16";
+      return "Timestamp unavailable";
     }
   };
 
   const getModeBadge = (item: InvestigationResponse) => {
-    const q = item.question.toLowerCase();
-    const a = (item.answer || "").toLowerCase();
+    const mode = investigationMode(item);
 
-    if (q.includes("sar") || a.includes("sar") || item.investigation_id === "analysis-003") {
+    if (mode === 'optical_sar') {
       return (
         <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-wider bg-amber-950/60 text-amber-400 border border-amber-500/40">
           OPTICAL+SAR
         </span>
       );
     }
-    if (
-      q.includes("between these two") ||
-      q.includes("change") ||
-      q.includes("dates") ||
-      q.includes("baseline") ||
-      item.investigation_id === "analysis-002" ||
-      item.investigation_id === "analysis-004"
-    ) {
+    if (mode === 'bi_temporal') {
       return (
         <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-wider bg-purple-950/60 text-purple-300 border border-purple-500/40">
           BI-TEMPORAL
@@ -149,20 +135,7 @@ export function AnalysisHistoryView({
         (item.answer && item.answer.toLowerCase().includes(q));
 
       // Mode filter
-      let itemMode = "single_image";
-      const qLower = item.question.toLowerCase();
-      if (qLower.includes("sar") || (item.answer && item.answer.toLowerCase().includes("sar")) || item.investigation_id === "analysis-003") {
-        itemMode = "optical_sar";
-      } else if (
-        qLower.includes("between these two") ||
-        qLower.includes("change") ||
-        qLower.includes("dates") ||
-        qLower.includes("baseline") ||
-        item.investigation_id === "analysis-002" ||
-        item.investigation_id === "analysis-004"
-      ) {
-        itemMode = "bi_temporal";
-      }
+      const itemMode = investigationMode(item);
 
       const matchesMode = selectedMode === "all" || itemMode === selectedMode;
 
@@ -207,7 +180,7 @@ export function AnalysisHistoryView({
             onClick={handleClearCache}
             className="px-3.5 py-1.5 rounded-lg text-xs font-mono text-gray-300 bg-[#111827] border border-[#1F2937] hover:border-gray-500 hover:text-white transition-colors cursor-pointer shadow-sm"
           >
-            Clear Demo Cache
+            Clear history
           </button>
           <button
             onClick={onNewAnalysis}
@@ -302,10 +275,8 @@ export function AnalysisHistoryView({
                 </tr>
               ) : (
                 filteredItems.map((item) => {
-                  const confScore = item.confidence?.confidence_score
+                  const confScore = item.confidence?.confidence_score != null
                     ? Math.round(item.confidence.confidence_score * 100)
-                    : item.confidence?.overall_confidence === "high"
-                    ? 88
                     : null;
 
                   return (
@@ -367,7 +338,7 @@ export function AnalysisHistoryView({
                               handleRowClick(item);
                             }}
                             title="Inspect in Results View"
-                            className="p-1.5 rounded hover:bg-cyan-950 text-gray-400 hover:text-cyan-300 transition-colors cursor-pointer border border-transparent hover:border-cyan-500/30"
+                            className="p-1.5 rounded hover:bg-cyan-950 text-slate-200 hover:text-cyan-200 transition-colors cursor-pointer border border-transparent hover:border-cyan-500/30"
                           >
                             <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                               <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
@@ -378,7 +349,7 @@ export function AnalysisHistoryView({
                           <button
                             onClick={(e) => handleDelete(item.investigation_id, e)}
                             title="Delete record"
-                            className="p-1.5 rounded hover:bg-rose-950 text-gray-400 hover:text-rose-400 transition-colors cursor-pointer border border-transparent hover:border-rose-500/30"
+                            className="p-1.5 rounded hover:bg-rose-950 text-slate-200 hover:text-rose-200 transition-colors cursor-pointer border border-transparent hover:border-rose-500/30"
                           >
                             <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                               <polyline points="3 6 5 6 21 6" />

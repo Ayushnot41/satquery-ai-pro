@@ -1,4 +1,5 @@
 import React from "react";
+import {ReportNotice} from "./ReportNotice";
 
 interface DisasterPdfReportTemplateProps {
   assessmentResult: any | null;
@@ -63,6 +64,7 @@ export const DisasterPdfReportTemplate = React.forwardRef<
     return (
       <div
         ref={ref}
+      aria-hidden="true"
         style={{
           width: "210mm",
           minHeight: "297mm",
@@ -78,6 +80,7 @@ export const DisasterPdfReportTemplate = React.forwardRef<
         }}
         className="disaster-pdf-print-container"
       >
+      <ReportNotice/>
         {/* ================= OFFICIAL HEADER ================= */}
         <div
           style={{

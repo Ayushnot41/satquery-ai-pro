@@ -1,4 +1,5 @@
 import React from "react";
+import {ReportNotice} from "./ReportNotice";
 import { AnalysisResult } from "../../types/investigation";
 
 interface ComparisonPdfReportTemplateProps {
@@ -31,6 +32,7 @@ export const ComparisonPdfReportTemplate = React.forwardRef<
   return (
     <div
       ref={ref}
+      aria-hidden="true"
       style={{
         width: "210mm",
         minHeight: "297mm",
@@ -46,6 +48,7 @@ export const ComparisonPdfReportTemplate = React.forwardRef<
       }}
       className="comparison-pdf-print-container"
     >
+      <ReportNotice/>
       {/* Header */}
       <div
         style={{

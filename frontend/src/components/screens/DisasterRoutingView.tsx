@@ -211,7 +211,7 @@ export function DisasterRoutingView() {
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
       pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`NDMA-ISRO-Disaster-Evacuation-Report-${Date.now()}.pdf`);
+      pdf.save(`Satquery_Disaster_Scenario_${Date.now()}.pdf`);
     } catch (err) {
       console.error("Disaster PDF export error:", err);
     } finally {
@@ -732,7 +732,7 @@ export function DisasterRoutingView() {
                     <polyline points="14 2 14 8 20 8"></polyline>
                     <line x1="16" y1="13" x2="8" y2="13"></line>
                   </svg>
-                  <span>{isExportingPdf ? "Rendering PDF..." : "Export Official Evacuation PDF Dossier"}</span>
+                  <span>{isExportingPdf ? "Rendering PDF..." : "Export Scenario PDF Report"}</span>
                 </button>
 
                 <button

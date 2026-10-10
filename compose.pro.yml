@@ -1,0 +1,75 @@
+name: satquery-ai-pro
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: satquery
+      POSTGRES_USER: satquery
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your environment file}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U satquery -d satquery]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.pro
+    environment: &backend-environment
+      DATABASE_URL: postgresql+psycopg://satquery:${POSTGRES_PASSWORD}@db:5432/satquery
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      AUTH_PEPPER: ${AUTH_PEPPER:?Set a random AUTH_PEPPER}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3010,http://127.0.0.1:3010}
+      ALLOW_DEMO_GUEST: ${ALLOW_DEMO_GUEST:-true}
+      DEVELOPMENT_VERIFICATION_CODES: false
+      DEMO_MODE: ${DEMO_MODE:-true}
+      VLM_BACKEND: ${VLM_BACKEND:-demo}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-Satquery AI <no-reply@example.com>}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM: ${TWILIO_FROM:-}
+      UPLOAD_DIR: /workspace/backend/data/uploads
+    volumes:
+      - imagery:/workspace/backend/data
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.pro
+    command: [python, -m, app.worker]
+    environment: *backend-environment
+    volumes:
+      - imagery:/workspace/backend/data
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile.pro
+      args:
+        BACKEND_URL: http://api:8010
+    ports:
+      - 127.0.0.1:3010:3010
+    depends_on:
+      - api
+    restart: unless-stopped
+volumes:
+  database:
+  imagery:

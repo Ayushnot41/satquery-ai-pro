@@ -72,6 +72,7 @@ class InvestigationResponse(BaseModel):
     status: InvestigationStatus
     question: str
     answer: str = ""
+    provenance: dict = Field(default_factory=dict)
 
     # Agent outputs
     plan: QueryPlan | None = None

@@ -10,6 +10,7 @@ from app.main import app
 async def test_root():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         response = await client.get("/")
         assert response.status_code == 200
         data = response.json()
@@ -22,6 +23,7 @@ async def test_root():
 async def test_health():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         response = await client.get("/api/health")
         assert response.status_code == 200
         data = response.json()
@@ -33,6 +35,7 @@ async def test_health():
 async def test_scenarios():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         response = await client.get("/api/scenarios")
         assert response.status_code == 200
         scenarios = response.json()
@@ -45,6 +48,7 @@ async def test_scenarios():
 async def test_investigate_demo():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         payload = {
             "question": "Where has construction increased between these two dates?",
             "imagery_ids": ["demo-construction-before", "demo-construction-after"],
@@ -63,6 +67,7 @@ async def test_investigate_demo():
 async def test_spectral_analysis():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         response = await client.get("/api/investigate/spectral/analyze?lat=12.9716&lon=77.5946&index_type=ndvi")
         assert response.status_code == 200
         data = response.json()
@@ -76,6 +81,7 @@ async def test_spectral_analysis():
 async def test_polygon_measurement():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         payload = {
             "coordinates": [
                 [12.97, 77.59],
@@ -97,18 +103,22 @@ async def test_polygon_measurement():
 async def test_geojson_export():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/api/investigate/inv-test/geojson")
+        await client.post('/api/auth/guest-token', json={})
+        response = await client.get('/api/investigate/inv-test/geojson')
+        assert response.status_code == 404
+        result = await client.post('/api/investigate', json={'question':'Describe construction', 'imagery_ids':['demo-construction-before']})
+        response = await client.get('/api/investigate/' + result.json()['investigation_id'] + '/geojson')
         assert response.status_code == 200
-        data = response.json()
-        assert data["type"] == "FeatureCollection"
-        assert len(data["features"]) > 0
-        assert data["metadata"]["system"] == "BHUVISION Earth Intelligence (SIH26167)"
+        assert response.json()['type'] == 'FeatureCollection'
+        assert response.json()['features'] == []
+        assert response.json()['metadata']['provenance']['mode'] == 'simulation'
 
 
 @pytest.mark.asyncio
 async def test_traffic_and_locations():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         r_trf = await client.get("/api/traffic/flow?lat=12.9716&lon=77.5946")
         assert r_trf.status_code == 200
         assert len(r_trf.json()["segments"]) >= 1
@@ -122,6 +132,7 @@ async def test_traffic_and_locations():
 async def test_agent_debate_protocol():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         res = await client.get("/api/futuristic/debate?scenario=monsoon_flood")
         assert res.status_code == 200
         data = res.json()
@@ -141,6 +152,7 @@ async def test_agent_debate_protocol():
 async def test_map_providers_and_nasa_layers():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         # Test 3-map provider catalog
         r_prov = await client.get("/api/locations/providers")
         assert r_prov.status_code == 200
@@ -166,10 +178,11 @@ async def test_map_providers_and_nasa_layers():
 
 @pytest.mark.asyncio
 async def test_authentication_suite():
-    from app.api.auth import DEMO_USERS_DB
+    from app.api.auth import USERS as DEMO_USERS_DB
     DEMO_USERS_DB.pop("chandra@isro.gov.in", None)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         # 1. Email Registration
         reg_payload = {
             "name": "Dr. Subrahmanyan Chandrasekhar",
@@ -184,7 +197,7 @@ async def test_authentication_suite():
         reg_data = r_reg.json()
         assert "access_token" in reg_data
         assert reg_data["user"]["email"] == "chandra@isro.gov.in"
-        assert reg_data["user"]["clearance_level"] == "LEVEL_4_TOP_SECRET"
+        assert reg_data["user"]["clearance_level"] == "PUBLIC"
         token = reg_data["access_token"]
 
         # 2. Email Login
@@ -198,13 +211,13 @@ async def test_authentication_suite():
 
         # 3. Google OAuth Login
         r_goog = await client.post("/api/auth/google", json={"credential": "mock_google_id_token_xyz"})
-        assert r_goog.status_code == 200
-        assert r_goog.json()["user"]["google_verified"] is True
+        assert r_goog.status_code == 503
+        assert "access_token" not in r_goog.json()
 
         # 4. Phone SMS OTP Send & Verify
         r_otp_send = await client.post("/api/auth/otp/send", json={"phone": "+919811223344", "purpose": "verification"})
         assert r_otp_send.status_code == 200
-        otp_hint = r_otp_send.json().get("demo_otp_hint")
+        otp_hint = r_otp_send.json().get("development_code")
         assert otp_hint is not None
 
         r_otp_ver = await client.post("/api/auth/otp/verify", json={"phone": "+919811223344", "otp": otp_hint})
@@ -213,8 +226,8 @@ async def test_authentication_suite():
 
         # Master judge bypass code
         r_master = await client.post("/api/auth/otp/verify", json={"phone": "+919999999999", "otp": "123456"})
-        assert r_master.status_code == 200
-        assert r_master.json()["verified"] is True
+        assert r_master.status_code == 400
+        assert "access_token" not in r_master.json()
 
         # 5. Profile Check
         r_me = await client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
@@ -229,6 +242,7 @@ async def test_deployment_manual_download():
     """Verify that the Enterprise Production Deployment Manual PDF endpoint serves valid PDF content."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         res = await client.get("/api/download/deployment-manual")
         assert res.status_code == 200
         assert res.headers["content-type"] == "application/pdf"
@@ -241,6 +255,7 @@ async def test_polygon_measurement_boundary_and_validation():
     """Verify that degenerate and invalid polygon inputs are cleanly rejected with HTTP 400."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         # Too few vertices (< 3)
         res_few = await client.post("/api/investigate/measure/area", json={"coordinates": [[12.97, 77.59], [12.98, 77.60]]})
         assert res_few.status_code == 400
@@ -257,6 +272,7 @@ async def test_location_search_robustness():
     """Verify that whitespace queries, unusual inputs, and edge cases return clean responses."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         # Normal query
         r1 = await client.get("/api/locations/search?q=Bengaluru")
         assert r1.status_code == 200

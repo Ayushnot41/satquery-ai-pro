@@ -14,7 +14,7 @@ function ConfidenceGauge({ value }: { value: number | null }) {
     return (
       <div className="flex flex-col items-center justify-center w-28 h-28 rounded-full border-2 border-dashed border-gray-700">
         <span className="text-gray-500 text-[10px] font-mono uppercase text-center leading-tight">
-          Pending
+          Not reported
         </span>
       </div>
     );
@@ -149,7 +149,7 @@ export function AnswerConfidencePanel({ result, isLoading = false }: AnswerConfi
               : confidence >= 50
               ? "MODERATE CONFIDENCE"
               : "LOW CONFIDENCE"
-            : "PENDING"}
+            : "NOT REPORTED"}
         </span>
       </div>
 
@@ -176,13 +176,13 @@ export function AnswerConfidencePanel({ result, isLoading = false }: AnswerConfi
             <ConfidenceGauge value={confidence} />
             <div className="flex-1">
               <p className="text-[10px] font-mono text-gray-500 uppercase tracking-wider mb-2">
-                Empirical Calibration
+                Reported confidence
               </p>
               <div className="space-y-1.5">
                 {confidence !== null && confidence >= 80 && (
                   <div className="flex items-center gap-1.5 text-[11px] text-emerald-400">
                     <span>✓</span>
-                    <span>All agent consensus thresholds met</span>
+                    <span>High reported score; independent review required</span>
                   </div>
                 )}
                 {confidence !== null && confidence < 80 && confidence >= 50 && (
@@ -198,7 +198,7 @@ export function AnswerConfidencePanel({ result, isLoading = false }: AnswerConfi
                   </div>
                 )}
                 <p className="text-[10px] text-gray-500 font-mono">
-                  Score wired to Agent 8 empirical calibration. Never fabricated.
+                  Model confidence is not a calibrated probability of correctness.
                 </p>
               </div>
             </div>

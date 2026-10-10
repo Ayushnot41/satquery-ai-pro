@@ -130,11 +130,11 @@ export function StaticImageComparisonView({ onViewDetailedResult }: StaticImageC
           name: slotB.name,
           sensor_type: slotB.sensorType,
         },
-        findings: analysisOutput?.answer || "Comparative baseline established.",
-        confidence_score: analysisOutput?.confidence ?? 89,
+        findings: analysisOutput?.answer || "No analysis has been run.",
+        confidence_score: analysisOutput?.confidence ?? null,
         metrics: analysisOutput?.metrics || {
-          "Changed Surface Area": "18.4%",
-          "Confidence Level": "89% High",
+          "Analysis": "Not completed",
+          "Confidence Level": "Not measured",
         },
         evidence_regions: analysisOutput?.evidence?.regions || [],
         execution_trace: analysisOutput?.trace || [],
@@ -191,28 +191,20 @@ export function StaticImageComparisonView({ onViewDetailedResult }: StaticImageC
       const imageryIds: string[] = [];
 
       if (slotA.file) {
-        try {
-          const upA = await uploadImagery(slotA.file);
-          imageryIds.push(upA.id);
-        } catch {
-          imageryIds.push("demo-construction-before");
-        }
+        const upA = await uploadImagery(slotA.file);
+        imageryIds.push(upA.id);
       } else {
         imageryIds.push("demo-construction-before");
       }
 
       if (slotB.file) {
-        try {
-          const upB = await uploadImagery(slotB.file);
-          imageryIds.push(upB.id);
-        } catch {
-          imageryIds.push("demo-construction-after");
-        }
+        const upB = await uploadImagery(slotB.file);
+        imageryIds.push(upB.id);
       } else {
         imageryIds.push("demo-construction-after");
       }
 
-      const resp = await runInvestigation(query, imageryIds, "bi_temporal");
+      const resp = await runInvestigation(query, imageryIds, "temporal");
       const result = investigationResponseToAnalysisResult(
         resp,
         "bi_temporal",
@@ -222,43 +214,7 @@ export function StaticImageComparisonView({ onViewDetailedResult }: StaticImageC
       );
       setAnalysisOutput(result);
     } catch (err) {
-      console.error("Comparison analysis error:", err);
-      // Construct truthful structured result
-      const fallbackResult: AnalysisResult = {
-        run_id: `COMP-${Date.now().toString(16).slice(-6)}`,
-        created_at: new Date().toISOString(),
-        mode: "bi_temporal",
-        mission_context: "Multi-Temporal Bi-Temporal & Multi-Sensor Intelligence",
-        question: query,
-        input_ids: [slotA.name, slotB.name],
-        answer: `Multi-temporal neural analysis verified significant surface evolution between T0 and T1. Deep Siamese U-Net differencing highlights 18.4% changed surface coverage, with high-confidence localized grounding across primary anomaly clusters.`,
-        status: "complete",
-        confidence: 89,
-        metrics: {
-          "Changed Surface Area": "18.4%",
-          "Confidence Level": "89% High",
-          "Sensor Complement": `${slotA.sensorType} + ${slotB.sensorType}`,
-          "Grounding Resolution": "Calibrated Sub-Pixel",
-        },
-        evidence: {
-          type: "bounding_box",
-          regions: [
-            { id: "reg-1", label: "Primary Expansion Sector", score: 0.94, type: "bounding_box", bbox: { x: 0.18, y: 0.22, width: 0.38, height: 0.42 } },
-            { id: "reg-2", label: "Secondary Peripheral Change", score: 0.87, type: "bounding_box", bbox: { x: 0.62, y: 0.40, width: 0.28, height: 0.35 } },
-          ],
-        },
-        limitations: ["Atmospheric optical attenuation accounted for via cross-sensor radar arbitration."],
-        trace: [
-          { step: "Sensor Alignment", tool: "Agent 2 - Geo Validator", duration_ms: 28, status: "success", detail: "Dual rasters registered." },
-          { step: "Task Planning", tool: "Agent 1 - Query Planner", duration_ms: 65, status: "success", detail: "Bi-temporal change protocol activated." },
-          { step: "Siamese U-Net Differencing", tool: "Agent 5 - Change Detection", duration_ms: 124, status: "success", detail: "Neural feature difference extracted." },
-          { step: "Visual Grounding", tool: "Agent 6 - Grounding Engine", duration_ms: 88, status: "success", detail: "Boundaries demarcated." },
-          { step: "Consensus Arbitration", tool: "Agent 7 - Evidence Fusion", duration_ms: 45, status: "success", detail: "Unanimous agreement." },
-        ],
-        imageUrls: [slotA.previewUrl, slotB.previewUrl],
-        previewUrl: slotB.previewUrl,
-      };
-      setAnalysisOutput(fallbackResult);
+      setAnalysisOutput({run_id:'failed-comparison',input_ids:[],created_at:new Date().toISOString(),mode:'bi_temporal',mission_context:'Comparison',question:query,status:'error',answer:(err as Error).message,confidence:null,metrics:{},evidence:{type:'bounding_box',regions:[]},limitations:['No comparison was completed.'],trace:[],imageUrls:[slotA.previewUrl,slotB.previewUrl]});
     } finally {
       setIsAnalyzing(false);
     }

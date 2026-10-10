@@ -616,7 +616,7 @@ export function SatelliteViewer({
               >
                 <div className="absolute -top-6 left-0 bg-[#EF4444] text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded shadow flex items-center gap-1.5 whitespace-nowrap">
                   <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                  <span>AI Verified Change AOI (14.2%)</span>
+                  <span>Illustrative change overlay · not measured</span>
                 </div>
               </div>
             );

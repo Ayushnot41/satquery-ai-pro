@@ -1,4 +1,5 @@
 import React from "react";
+import {ReportNotice} from "./ReportNotice";
 
 interface SarPdfReportTemplateProps {
   sarData: any | null;
@@ -88,6 +89,7 @@ export const SarPdfReportTemplate = React.forwardRef<
     return (
       <div
         ref={ref}
+      aria-hidden="true"
         style={{
           width: "210mm",
           minHeight: "297mm",
@@ -103,6 +105,7 @@ export const SarPdfReportTemplate = React.forwardRef<
         }}
         className="sar-pdf-print-container"
       >
+      <ReportNotice/>
         {/* ================= OFFICIAL HEADER ================= */}
         <div
           style={{

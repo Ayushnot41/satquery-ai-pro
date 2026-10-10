@@ -6,6 +6,7 @@ Includes:
 3. Simulated On-Orbit INT8 Edge AI Inference (LEO Satellite Payload processing)
 """
 
+from ..core.provenance import SimulationRoute
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
@@ -13,7 +14,7 @@ import math
 import random
 import numpy as np
 
-router = APIRouter(prefix="/futuristic", tags=["Futuristic Earth Intelligence"])
+router = APIRouter(route_class=SimulationRoute, prefix="/futuristic", tags=["Futuristic Earth Intelligence"])
 
 
 class SAMGeoSegment(BaseModel):
@@ -549,7 +550,7 @@ async def get_agent_debate_protocol(
 
 
 # Direct /api/debate router alias for frontend compatibility
-debate_router = APIRouter(tags=["Agent Debate"])
+debate_router = APIRouter(route_class=SimulationRoute, tags=["Agent Debate"])
 
 
 @debate_router.get("/debate", response_model=AgentDebateSession)

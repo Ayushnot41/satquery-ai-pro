@@ -92,6 +92,10 @@ class InvestigationOrchestrator:
             # === STEP 1: Query Planning (Agent 1) ===
             response.status = InvestigationStatus.PLANNING
             plan = await self.query_planner.plan(request.question, trace)
+            if request.mode == "temporal":
+                if len(imagery) < 2:
+                    raise ValueError("Temporal analysis requires two images")
+                plan.requires_temporal = True
             response.plan = plan
 
             # === STEP 2: Input & Geo Validation (Agent 2) ===
@@ -106,7 +110,8 @@ class InvestigationOrchestrator:
                     agent_id=2,
                     message=f"Input validation reported fatal issues: {validation.issues}",
                 ))
-                # We do not abort completely; we record issues and attempt best-effort fallback
+                if not validation.file_valid or not validation.dimensions_valid:
+                    raise ValueError('Input imagery is invalid')
 
             # === STEP 3: Sensor Routing (Agent 3) ===
             response.status = InvestigationStatus.ROUTING
@@ -120,15 +125,16 @@ class InvestigationOrchestrator:
             loaded_images: dict[str, np.ndarray] = {}
             for item in imagery:
                 try:
-                    arr, _ = load_raster_data(item.path)
+                    arr, _ = await asyncio.to_thread(load_raster_data, item.path)
                     loaded_images[item.id] = arr
                 except Exception as e:
                     trace.add_event(TraceEvent(
                         event_type=TraceEventType.AGENT_ERROR,
                         agent_name="Input Validation",
                         agent_id=2,
-                        message=f"Failed to load {item.path}: {e}",
+                        message=f"Failed to decode imagery {item.id}.",
                     ))
+                    raise ValueError('An input image could not be decoded') from e
 
             # Primary image selection (with safe key guard)
             primary_img = next((loaded_images[i.id] for i in imagery if i.role == "primary" and i.id in loaded_images), None)
@@ -146,13 +152,15 @@ class InvestigationOrchestrator:
             if (plan.requires_temporal or plan.task_type == TaskType.CHANGE_DETECTION) and before_img is not None and after_img is not None:
                 change_res = await self.change_detector.detect_changes(before_img, after_img, trace)
                 response.change_result = change_res
+                if change_res.method_used == "error":
+                    raise ValueError("Change detection could not be completed")
 
             # Execute SAR Analysis if SAR imagery is available or required
             sar_input = next((i for i in imagery if i.metadata.sensor_type == SensorType.SAR), None)
             if sar_input and sar_input.id in loaded_images:
                 sar_arr = loaded_images[sar_input.id]
                 try:
-                    sar_ev = self.sar_processor.process(sar_arr)
+                    sar_ev = await asyncio.to_thread(self.sar_processor.process, sar_arr)
                     trace.add_event(TraceEvent(
                         event_type=TraceEventType.EVIDENCE_PRODUCED,
                         agent_name="SAR Intelligence",
@@ -209,6 +217,7 @@ class InvestigationOrchestrator:
                     overlays.append(VisualOverlay(
                         overlay_type="bbox",
                         coordinates=[reg.bbox],
+                        coordinate_space=reg.coordinate_space,
                         color="#3B82F6" if reg.change_type != "detected_change" else "#EF4444",
                         opacity=0.45,
                         label=reg.change_type,
@@ -240,17 +249,18 @@ class InvestigationOrchestrator:
             response.status = InvestigationStatus.COMPLETE
 
         except Exception as exc:
-            logger.error("investigation_recovered", error=str(exc), exc_info=True)
+            logger.error("investigation_failed", error=str(exc), exc_info=True)
             trace.add_event(TraceEvent(
-                event_type=TraceEventType.WARNING,
+                event_type=TraceEventType.AGENT_ERROR,
                 agent_name="Investigation Orchestrator",
                 agent_id=9,
-                message=f"Investigation workflow synthesized via domain fallback: {exc}",
+                message="Investigation failed. Check input imagery and provider configuration.",
             ))
             final_trace = await self.audit_trace.finalize_trace(trace)
-            response.status = InvestigationStatus.COMPLETE
-            first_arr = next(iter(loaded_images.values())) if ('loaded_images' in locals() and loaded_images) else np.zeros((512, 512, 3), dtype=np.uint8)
-            response.answer = self.vlm._synthesize_domain_answer(first_arr, request.question)
+            response.status = InvestigationStatus.ERROR
+            response.answer = "The investigation could not be completed. Check imagery and provider configuration, then retry."
+            response.confidence = None
             response.trace = final_trace
+            response.total_duration_ms = final_trace.total_duration_ms
 
         return response

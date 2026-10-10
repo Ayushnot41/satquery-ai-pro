@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -86,7 +86,8 @@ class VQAResult(BaseModel):
 
 class ChangeRegion(BaseModel):
     """A detected change region."""
-    bbox: list[float] = Field(..., description="[x_min, y_min, x_max, y_max] in pixel coords")
+    bbox: list[float] = Field(..., min_length=4, max_length=4, description="[x_min, y_min, x_max, y_max]; see coordinate_space")
+    coordinate_space: Literal['pixel', 'normalized'] = 'pixel'
     geo_bbox: list[float] | None = Field(
         None, description="[west, south, east, north] in geographic coords"
     )
@@ -155,6 +156,7 @@ class VisualOverlay(BaseModel):
     """Visual overlay for the frontend."""
     overlay_type: str  # "bbox", "mask", "heatmap", "polygon"
     coordinates: list[list[float]] = Field(default_factory=list)
+    coordinate_space: Literal['pixel', 'normalized'] = 'pixel'
     color: str = "#3B82F6"
     opacity: float = 0.4
     label: str = ""

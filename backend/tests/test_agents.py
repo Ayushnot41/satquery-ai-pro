@@ -41,15 +41,17 @@ async def test_query_planner_flood_sar():
 
 
 @pytest.mark.asyncio
-async def test_input_validation():
+async def test_input_validation(tmp_path):
     validator = InputValidationAgent()
     trace = ExecutionTrace(investigation_id="test-3")
     
     # Valid mock imagery input
     geo = GeoMetadata(width=256, height=256, band_count=3, crs="EPSG:4326")
     meta = ImageryMetadata(id="img-1", filename="test.png", sensor_type=SensorType.OPTICAL, geo=geo)
-    # Using existing test file
-    inp = ImageryInput(id="img-1", path="g:/Satquery Ai/.gitignore", metadata=meta, role="primary")
+    from PIL import Image
+    path = tmp_path / "input.png"
+    Image.new("RGB", (256, 256)).save(path)
+    inp = ImageryInput(id="img-1", path=str(path), metadata=meta, role="primary")
     
     res = await validator.validate([inp], trace)
     assert res.file_valid is True

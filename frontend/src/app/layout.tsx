@@ -1,11 +1,12 @@
 // @ts-ignore
 import type { Metadata } from "next";
 import "./globals.css";
+import "./pro.css";
 
 export const metadata: Metadata = {
-  title: "BHUVISION — Agentic Earth Intelligence (SIH26167)",
+  title: "Satquery AI Pro — Earth Intelligence Workspace",
   description:
-    "An Interactive Vision-Language Assistant for Multimodal Remote Sensing Image Analysis through Text Queries (ISRO / BANKAI).",
+    "Explore Earth imagery, compare changes, and inspect agent reasoning in a focused geospatial workspace. Built on BHUVISION by Team BANKAI.",
 };
 
 export default function RootLayout({

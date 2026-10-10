@@ -80,51 +80,28 @@ class VisualGroundingAgent(AgentBase):
             labeled, num_features = ndimage.label(mask)
             regions: list[ChangeRegion] = []
 
-            # Determine thematic tag from query context
-            c_lower = context.lower()
-            if any(k in c_lower for k in ["place", "where", "location", "city", "wich", "which"]):
-                tag_prefix = "Urban Center / Landmark Zone"
-            elif any(k in c_lower for k in ["crop", "parcel", "agricultur", "field"]):
-                tag_prefix = "Parcel Boundary / Vegetation Zone"
-            elif any(k in c_lower for k in ["water", "flood", "river"]):
-                tag_prefix = "Hydrological Feature"
-            elif any(k in c_lower for k in ["build", "urban", "structur"]):
-                tag_prefix = "Built Infrastructure"
-            else:
-                tag_prefix = "Prominent Spatial Feature"
+            # Saliency indicates contrast, not semantic class or calibrated confidence.
+            tag_prefix = "Salient region (unclassified)"
 
             # Sort components by area descending
-            components = []
-            for i in range(1, min(num_features + 1, 50)):
-                comp = (labeled == i)
-                area = int(np.sum(comp))
-                if area > 100:
-                    components.append((area, comp))
-
-            components.sort(key=lambda x: x[0], reverse=True)
+            counts = np.bincount(labeled.ravel())
+            candidate_ids = np.argsort(counts[1:])[::-1] + 1
+            components = [(int(counts[i]), labeled == i) for i in candidate_ids[:5] if counts[i] > 100]
 
             for idx, (area, comp) in enumerate(components[:5]):
                 ys, xs = np.where(comp)
                 # Normalized 0.0 to 1.0 bounding box coordinates
                 xmin = max(0.0, float(xs.min()) / w)
                 ymin = max(0.0, float(ys.min()) / h)
-                xmax = min(1.0, float(xs.max()) / w)
-                ymax = min(1.0, float(ys.max()) / h)
+                xmax = min(1.0, float(xs.max() + 1) / w)
+                ymax = min(1.0, float(ys.max() + 1) / h)
 
                 regions.append(ChangeRegion(
                     bbox=[round(xmin, 4), round(ymin, 4), round(xmax, 4), round(ymax, 4)],
                     change_type=f"{tag_prefix} {chr(65 + idx)}",
-                    change_magnitude=round(min(0.95, 0.75 + (area / (h * w)) * 2), 2),
+                    coordinate_space="normalized",
+                    change_magnitude=round(area / (h * w), 4),
                     area_pixels=area,
-                ))
-
-            # Fallback if no clean components
-            if not regions and h > 20 and w > 20:
-                regions.append(ChangeRegion(
-                    bbox=[0.15, 0.15, 0.85, 0.85],
-                    change_type=f"{tag_prefix} Primary Sector",
-                    change_magnitude=0.85,
-                    area_pixels=int(h * w * 0.5),
                 ))
 
             return regions

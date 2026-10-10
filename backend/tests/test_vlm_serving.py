@@ -41,12 +41,14 @@ async def test_local_lora_caption_and_change():
 
 
 @pytest.mark.asyncio
-async def test_vllm_backend_fallback_resilience():
-    """Verify that VLLMBackend safely falls back when local server is offline."""
+async def test_vllm_backend_failure_is_explicit(monkeypatch):
+    """An offline provider cannot turn synthetic text into a successful answer."""
+    import httpx
+    async def unavailable(*args, **kwargs):
+        raise httpx.ConnectError('offline')
+    monkeypatch.setattr(httpx.AsyncClient, 'post', unavailable)
     vllm = VLLMBackend(base_url="http://127.0.0.1:9999/v1")  # Unreachable port
     img = np.zeros((64, 64, 3), dtype=np.uint8)
 
-    # Should not crash, should gracefully return grounded answer via fallback
-    res = await vllm.answer_question(img, "Where has vegetation changed?")
-    assert len(res.answer) > 10
-    assert res.metadata.get("vllm_fallback") is True
+    with pytest.raises(RuntimeError, match='did not complete inference'):
+        await vllm.answer_question(img, "Where has vegetation changed?")

@@ -15,6 +15,10 @@ from PIL import Image
 from ..schemas.imagery import BandInfo, GeoMetadata, ImageFormat, ImageryMetadata, SensorType
 
 
+class RasterSizeError(ValueError):
+    """Decoding a raster would exceed the workspace memory budget."""
+
+
 def load_raster_data(file_path: str | Path) -> tuple[np.ndarray, GeoMetadata]:
     """Load raster file into numpy array and extract geospatial metadata."""
     path = Path(file_path)
@@ -27,17 +31,18 @@ def load_raster_data(file_path: str | Path) -> tuple[np.ndarray, GeoMetadata]:
 
         with rasterio.open(str(path)) as src:
             # Read bands (rasterio is (bands, height, width))
+            if src.width * src.height * src.count > 100_000_000:
+                raise RasterSizeError('Raster exceeds decoded size limit')
             data = src.read()
             # Transpose to (height, width, bands) for image operations
             if data.ndim == 3:
-                if data.shape[0] in (1, 3, 4):
-                    data = np.transpose(data, (1, 2, 0))
-                    if data.shape[2] == 1:
-                        data = data[:, :, 0]
+                data = np.transpose(data, (1, 2, 0))
+                if data.shape[2] == 1:
+                    data = data[:, :, 0]
 
             bounds_list = [src.bounds.left, src.bounds.bottom, src.bounds.right, src.bounds.top]
             transform_list = list(src.transform)[:6]
-            crs_str = str(src.crs) if src.crs else "EPSG:4326"
+            crs_str = str(src.crs) if src.crs else None
 
             bands_info = []
             for i in range(1, src.count + 1):
@@ -47,19 +52,23 @@ def load_raster_data(file_path: str | Path) -> tuple[np.ndarray, GeoMetadata]:
 
             geo = GeoMetadata(
                 crs=crs_str,
-                bounds=bounds_list,
-                transform=transform_list,
+                bounds=bounds_list if src.crs else None,
+                transform=transform_list if src.crs else None,
                 width=src.width,
                 height=src.height,
                 band_count=src.count,
                 bands=bands_info,
-                resolution=(float(src.res[0]), float(src.res[1])),
+                resolution=(float(src.res[0]), float(src.res[1])) if src.crs else None,
             )
             return data, geo
 
+    except RasterSizeError:
+        raise
     except Exception:
         # Fallback to PIL
         with Image.open(path) as pil_img:
+            if pil_img.width * pil_img.height * max(1, len(pil_img.getbands())) > 100_000_000:
+                raise RasterSizeError('Raster exceeds decoded size limit')
             # Convert palette images to RGB
             if pil_img.mode in ("P", "RGBA"):
                 pil_img = pil_img.convert("RGB")
@@ -69,14 +78,14 @@ def load_raster_data(file_path: str | Path) -> tuple[np.ndarray, GeoMetadata]:
             bands_count = arr.shape[2] if arr.ndim == 3 else 1
 
             geo = GeoMetadata(
-                crs="EPSG:4326",
-                bounds=[77.0, 28.0, 77.1, 28.1],  # Default fallback coordinates
-                transform=[0.0001, 0.0, 77.0, 0.0, -0.0001, 28.1],
+                crs=None,
+                bounds=None,
+                transform=None,
                 width=width,
                 height=height,
                 band_count=bands_count,
                 bands=[BandInfo(index=i + 1, dtype=str(arr.dtype)) for i in range(bands_count)],
-                resolution=(10.0, 10.0),
+                resolution=None,
             )
             return arr, geo
 
@@ -103,10 +112,7 @@ def extract_metadata(file_path: str | Path, image_id: str) -> ImageryMetadata:
     if "sar" in name_lower or "s1" in name_lower or "sentinel-1" in name_lower:
         sensor = SensorType.SAR
 
-    try:
-        _, geo = load_raster_data(path)
-    except Exception:
-        geo = GeoMetadata(width=512, height=512, band_count=3)
+    _, geo = load_raster_data(path)
 
     return ImageryMetadata(
         id=image_id,
@@ -114,6 +120,7 @@ def extract_metadata(file_path: str | Path, image_id: str) -> ImageryMetadata:
         file_size_bytes=file_size,
         format=fmt,
         sensor_type=sensor,
-        satellite="Sentinel-2" if sensor == SensorType.OPTICAL else "Sentinel-1",
+        satellite=None,
+        extra={"sensor_inferred_from_filename": True, "georeferenced": bool(geo.crs)},
         geo=geo,
     )

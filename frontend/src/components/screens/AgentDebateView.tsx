@@ -77,7 +77,7 @@ export function AgentDebateView({ onTriggerInvestigation }: AgentDebateViewProps
               Autonomous Scientific Council
             </span>
             <span className="px-2.5 py-0.5 rounded-full bg-blue-950 text-blue-300 border border-blue-500/40 text-[10px] font-mono font-bold uppercase tracking-wider">
-              Zero-Hallucination Arbitration
+              Scenario arbitration
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold font-space tracking-tight">
@@ -272,7 +272,7 @@ export function AgentDebateView({ onTriggerInvestigation }: AgentDebateViewProps
                 {debateData?.overruled_sensor || "Optical Sensor False Negative (Cloud Cover)"}
               </div>
 
-              <div className="text-[11px] text-gray-400 mt-2">Verified Ground Truth:</div>
+              <div className="text-[11px] text-gray-400 mt-2">Scenario conclusion:</div>
               <div className="bg-emerald-950/40 border border-emerald-500/30 p-2.5 rounded-lg text-emerald-200 text-[11px] font-sans leading-relaxed">
                 {debateData?.final_verdict || "420 Hectares of inundation confirmed. Cloud deck penetrated via 5.405 GHz microwave radar."}
               </div>
@@ -285,7 +285,7 @@ export function AgentDebateView({ onTriggerInvestigation }: AgentDebateViewProps
               </div>
               <div className="flex justify-between text-[11px]">
                 <span className="text-gray-400">Hallucination Risk:</span>
-                <span className="text-emerald-400 font-bold">0.00% (Mathematically Bound)</span>
+                <span className="text-emerald-400 font-bold">Not measured</span>
               </div>
             </div>
           </div>
@@ -293,10 +293,10 @@ export function AgentDebateView({ onTriggerInvestigation }: AgentDebateViewProps
           {/* Launch In Live Cockpit Card */}
           <div className="bg-gradient-to-br from-purple-950/50 to-blue-950/50 border border-purple-500/40 p-5 rounded-2xl shadow-xl space-y-3">
             <h3 className="text-sm font-bold text-white font-space">
-              Inspect Live Satellite Rasters
+              Inspect scenario imagery
             </h3>
             <p className="text-[11px] text-gray-300 font-sans leading-relaxed">
-              Load this verified scenario directly into the dual-dimension 2D/3D surveillance cockpit with real-time slippy tiles.
+              Load this illustrative scenario directly into the dual-dimension 2D/3D surveillance cockpit with real-time slippy tiles.
             </p>
 
             <button

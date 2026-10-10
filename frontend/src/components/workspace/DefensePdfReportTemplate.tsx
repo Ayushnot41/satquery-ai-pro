@@ -1,4 +1,5 @@
 import React from "react";
+import {ReportNotice} from "./ReportNotice";
 
 interface DefensePdfReportTemplateProps {
   branch: "NAVY" | "AIR_FORCE" | "ARMY_BSF";
@@ -38,6 +39,7 @@ export const DefensePdfReportTemplate = React.forwardRef<
   return (
     <div
       ref={ref}
+      aria-hidden="true"
       style={{
         width: "210mm",
         minHeight: "297mm",
@@ -53,6 +55,7 @@ export const DefensePdfReportTemplate = React.forwardRef<
       }}
       className="defense-pdf-print-container"
     >
+      <ReportNotice/>
       {/* ================= CLASSIFIED DEFENSE HEADER ================= */}
       <div
         style={{

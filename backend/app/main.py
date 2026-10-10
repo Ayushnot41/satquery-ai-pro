@@ -24,10 +24,12 @@ from .api.traffic import router as traffic_router
 from .api.futuristic import router as futuristic_router, debate_router
 from .api.nasa_tile import router as nasa_tile_router
 from .api.auth import router as auth_router
+from .api.jobs import router as jobs_router
 from .api.benchmark import router as benchmark_router
 from .api.defense import router as defense_router
 from .api.sar_reader import router as sar_reader_router
 from .core.config import settings
+from .core.guard import SecurityBoundary
 from .core.logging import get_logger, setup_logging
 
 logger = get_logger("app.main")
@@ -36,6 +38,17 @@ logger = get_logger("app.main")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown hooks."""
+    if settings.environment in ('preview', 'production'):
+        if not settings.cookie_secure or len(settings.auth_pepper) < 32 or settings.auth_pepper.startswith('development'):
+            raise RuntimeError('Public environments require a random AUTH_PEPPER and COOKIE_SECURE=true')
+        if settings.development_verification_codes:
+            raise RuntimeError('Disable development verification codes in public environments')
+        if settings.environment == 'production' and settings.allow_demo_guest:
+            raise RuntimeError('Disable guest sessions in production')
+        if settings.environment == 'preview' and (not settings.demo_mode or settings.vlm_backend != 'demo'):
+            raise RuntimeError('Public previews must use demo analysis only')
+        if any('*' in origin or not origin.startswith('https://') for origin in settings.cors_origin_list):
+            raise RuntimeError('Public CORS origins must be explicit HTTPS URLs')
     setup_logging()
     logger.info("bhuvision_starting", version=settings.app_version, backend=settings.vlm_backend)
     
@@ -58,17 +71,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(SecurityBoundary)
+
 # CORS middleware with standards-compliant credential support
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list + [
-        "http://localhost:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-        "http://127.0.0.1:3000",
-        "https://raw.githack.com",
-    ],
-    allow_origin_regex=r"https?://.*",
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -78,12 +86,12 @@ app.add_middleware(
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Global exception barrier preventing unhandled server crashes and raw stack traces."""
-    logger.error("unhandled_server_exception", path=str(request.url), error=str(exc))
+    logger.error("unhandled_server_exception", path=request.url.path, error=str(exc))
     return JSONResponse(
         status_code=500,
         content={
             "detail": "Internal spatial intelligence pipeline exception.",
-            "error": str(exc),
+            "request_id": getattr(request.state, "request_id", None),
             "status": "error",
         },
     )
@@ -94,13 +102,20 @@ demo_path = Path("./data/demo")
 upload_path.mkdir(parents=True, exist_ok=True)
 demo_path.mkdir(parents=True, exist_ok=True)
 
-app.mount("/static/uploads", StaticFiles(directory=str(upload_path)), name="uploads")
+@app.get('/static/uploads/{filename}')
+async def private_upload(filename: str):
+    from .api.imagery import IMAGERY_REGISTRY
+    from .core.security import ensure_safe_path
+    from fastapi import HTTPException
+    if not any(filename == m.filename or filename == m.extra.get('preview_filename') for m in IMAGERY_REGISTRY.values()):
+        raise HTTPException(404, 'Image not found')
+    return FileResponse(ensure_safe_path(filename, str(settings.upload_path)))
 app.mount("/static/demo", StaticFiles(directory=str(demo_path)), name="demo")
 
 def _get_project_root() -> Path:
     """Resolve project root directory reliably across local dev, monorepo, and containerized Docker environments."""
     current = Path(__file__).resolve().parent
-    for p in [current, current.parent, current.parent.parent]:
+    for p in [current, current.parent, current.parent.parent, current.parent.parent.parent]:
         if (p / "bhuvision_preview.html").exists() or (p / "assets").exists() or (p / "index.html").exists():
             return p
     cwd = Path.cwd()
@@ -128,6 +143,7 @@ app.include_router(futuristic_router, prefix="/api")
 app.include_router(debate_router, prefix="/api")
 app.include_router(nasa_tile_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
+app.include_router(jobs_router, prefix="/api")
 app.include_router(benchmark_router, prefix="/api")
 app.include_router(defense_router, prefix="/api")
 app.include_router(sar_reader_router, prefix="/api")
@@ -249,7 +265,7 @@ async def _proxy_to_nextjs(request: Request, target_path: str) -> Response:
     if target_path.startswith("/_next/"):
         sub_path = target_path.replace("/_next/", "")
         local_asset = next_dir / sub_path
-        if local_asset.exists() and local_asset.is_file():
+        if local_asset.resolve().is_relative_to(next_dir.resolve()) and local_asset.exists() and local_asset.is_file():
             media_type = _MIME_TYPES.get(local_asset.suffix.lower())
             return FileResponse(local_asset, media_type=media_type)
 
@@ -257,7 +273,7 @@ async def _proxy_to_nextjs(request: Request, target_path: str) -> Response:
     clean_path = target_path.strip("/")
     if clean_path:
         route_html = next_dir / "server" / "app" / f"{clean_path}.html"
-        if route_html.exists() and route_html.is_file():
+        if route_html.resolve().is_relative_to((next_dir / "server" / "app").resolve()) and route_html.exists() and route_html.is_file():
             return FileResponse(
                 route_html,
                 media_type="text/html",
@@ -341,3 +357,11 @@ async def download_deployment_manual_pdf():
     return {"error": "Deployment manual PDF not found", "path": str(pdf_file)}
 
 
+
+@app.get('/console', include_in_schema=False)
+async def pro_console():
+    return FileResponse(PROJECT_ROOT / 'index.html')
+
+@app.get('/legacy', include_in_schema=False)
+async def legacy_console():
+    return FileResponse(PROJECT_ROOT / 'legacy' / 'index.html')

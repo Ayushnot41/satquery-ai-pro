@@ -11,6 +11,7 @@ export const PdfReportTemplate = React.forwardRef<HTMLDivElement, PdfReportTempl
     return (
       <div
         ref={ref}
+        aria-hidden="true"
         style={{
           width: "210mm", // A4 width
           minHeight: "297mm", // A4 height
@@ -30,7 +31,7 @@ export const PdfReportTemplate = React.forwardRef<HTMLDivElement, PdfReportTempl
         <div style={{ borderBottom: "2px solid #1a365d", paddingBottom: "10px", marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
           <div>
             <h1 style={{ margin: 0, color: "#1a365d", fontSize: "24px", fontWeight: "bold" }}>GEOSPATIAL INTELLIGENCE REPORT</h1>
-            <p style={{ margin: "5px 0 0 0", color: "#4a5568", fontSize: "12px", textTransform: "uppercase" }}>ISRO SIH26167 • TEAM BANKAI</p>
+            <p style={{ margin: "5px 0 0 0", color: "#4a5568", fontSize: "12px", textTransform: "uppercase" }}>SATQUERY AI PRO · INVESTIGATION REPORT</p>
           </div>
           <div style={{ textAlign: "right", fontSize: "10px", color: "#718096" }}>
             <p style={{ margin: 0 }}>RUN ID: {result.run_id}</p>
@@ -38,6 +39,9 @@ export const PdfReportTemplate = React.forwardRef<HTMLDivElement, PdfReportTempl
           </div>
         </div>
 
+        <p style={{padding: '12px', backgroundColor:'#fff7ed', color:'#9a3412', fontSize:'12px'}}>
+          {result.provenance?.mode === 'simulation' || result.answer.includes('SIMULATION') ? 'SIMULATION — illustrative sample.' : 'MODEL INTERPRETATION — independent review required.'} Scientific accuracy has not been validated.
+        </p>
         {/* Mission Context & Question */}
         <div style={{ marginBottom: "25px" }}>
           <h2 style={{ fontSize: "14px", color: "#2d3748", textTransform: "uppercase", borderBottom: "1px solid #e2e8f0", paddingBottom: "4px", marginBottom: "10px" }}>Investigation Query</h2>
@@ -86,11 +90,11 @@ export const PdfReportTemplate = React.forwardRef<HTMLDivElement, PdfReportTempl
             <h2 style={{ fontSize: "14px", color: "#2d3748", textTransform: "uppercase", borderBottom: "1px solid #e2e8f0", paddingBottom: "4px", marginBottom: "10px" }}>Confidence Metrics</h2>
             <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
               <div style={{ width: "60px", height: "60px", borderRadius: "50%", border: "4px solid #48bb78", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "bold", fontSize: "18px", color: "#2f855a" }}>
-                {result.confidence}%
+                {result.confidence == null ? 'N/A' : `${result.confidence}%`}
               </div>
               <div>
-                <p style={{ margin: 0, fontSize: "12px", fontWeight: "bold", color: "#276749" }}>Empirically Calibrated</p>
-                <p style={{ margin: "2px 0 0 0", fontSize: "11px", color: "#4a5568" }}>All agent consensus thresholds met.</p>
+                <p style={{ margin: 0, fontSize: "12px", fontWeight: "bold", color: "#276749" }}>Reported confidence</p>
+                <p style={{ margin: "2px 0 0 0", fontSize: "11px", color: "#4a5568" }}>Not independently calibrated. Review limitations.</p>
               </div>
             </div>
           </div>
@@ -120,7 +124,7 @@ export const PdfReportTemplate = React.forwardRef<HTMLDivElement, PdfReportTempl
 
         {/* Footer */}
         <div style={{ marginTop: "40px", paddingTop: "10px", borderTop: "1px solid #e2e8f0", textAlign: "center", fontSize: "9px", color: "#a0aec0", textTransform: "uppercase" }}>
-          Automated multi-agent generation • Do not distribute without classification review
+          SATQUERY AI PRO · MODEL-GENERATED REPORT · REVIEW BEFORE USE
         </div>
       </div>
     );

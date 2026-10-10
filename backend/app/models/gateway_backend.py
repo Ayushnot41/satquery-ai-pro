@@ -254,17 +254,8 @@ class GatewayBackend(VLMBackend):
                 metadata={"gateway": gateway_used, "agent_id": self.agent_id},
             )
         except Exception as exc:
-            logger.warning("all_gateways_failed_using_synthesis", error=str(exc), model=self._model)
-            domain_answer = self._synthesize_domain_answer(image, question, context)
-            return VLMResponse(
-                answer=domain_answer,
-                raw_output=domain_answer,
-                model_name=self._model,
-                model_version="domain_synthesis",
-                tokens_used=120,
-                latency_ms=(time.time() - start) * 1000,
-                metadata={"gateway": "synthesis_fallback", "agent_id": self.agent_id},
-            )
+            logger.warning('vision_providers_unavailable', model=self._model)
+            raise RuntimeError('Vision providers unavailable; no inference was completed') from exc
 
     async def generate_caption(
         self,
@@ -327,20 +318,8 @@ class GatewayBackend(VLMBackend):
                 metadata={"gateway": gateway_used, "agent_id": agent_id or self.agent_id},
             )
         except Exception as exc:
-            logger.warning("text_inference_fallback", error=str(exc), model=model)
-            clean_text = (
-                "Spatial intelligence analysis verified target coordinate bounds. "
-                "Spectral indices and multi-temporal features demonstrate coherent surface alignment."
-            )
-            return VLMResponse(
-                answer=clean_text,
-                raw_output=clean_text,
-                model_name=model,
-                model_version="domain_synthesis",
-                tokens_used=64,
-                latency_ms=(time.time() - start) * 1000,
-                metadata={"gateway": "synthesis_fallback", "agent_id": agent_id or self.agent_id},
-            )
+            logger.warning('text_providers_unavailable', model=model)
+            raise RuntimeError('Text providers unavailable; no inference was completed') from exc
 
     async def health_check(self) -> dict:
         """Check connectivity of all configured gateways."""

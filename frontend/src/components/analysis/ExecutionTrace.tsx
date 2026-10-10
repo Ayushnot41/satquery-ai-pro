@@ -216,14 +216,14 @@ export function ExecutionTrace({
               {/* Metadata strip */}
               <div className="px-5 py-3 bg-[#050810] border-b border-[#1F2937] flex flex-wrap gap-4 text-[10px] font-mono text-gray-500">
                 <span>
-                  AGENTS: <span className="text-blue-400 font-bold">9</span>
+                  AGENTS RECORDED: <span className="text-blue-400 font-bold">{new Set(steps.map(step=>step.tool.split(' (')[0])).size}</span>
                 </span>
                 <span>
                   STEPS: <span className="text-white font-bold">{steps.length}</span>
                 </span>
                 {successCount > 0 && (
                   <span>
-                    VERIFIED: <span className="text-emerald-400 font-bold">{successCount}</span>
+                    RECORDED: <span className="text-emerald-400 font-bold">{successCount}</span>
                   </span>
                 )}
                 {warningCount > 0 && (
@@ -237,7 +237,7 @@ export function ExecutionTrace({
                   </span>
                 )}
                 <span className="ml-auto text-gray-600 italic">
-                  SIH26167 Auditable Compliance Record
+                  Recorded pipeline events
                 </span>
               </div>
 
@@ -259,7 +259,7 @@ export function ExecutionTrace({
                 <span>
                   Pipeline complete · Total {formatDuration(
                     steps.reduce((acc, s) => acc + s.duration_ms, 0)
-                  )} agent wall-clock time
+                  )} summed event duration (may overlap)
                 </span>
               </div>
             </>

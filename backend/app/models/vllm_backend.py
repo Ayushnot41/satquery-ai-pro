@@ -120,20 +120,14 @@ class VLLMBackend(VLMBackend):
                     raw_output=answer,
                     model_name=data.get("model", self.model_name),
                     model_version="vllm-local-0.6",
-                    confidence=0.94,
+                    confidence=None,
                     tokens_used=usage.get("total_tokens", 0),
                     latency_ms=round(latency, 2),
                     metadata={"engine": "vllm", "url": self.base_url},
                 )
         except Exception as e:
-            logger.warning("vllm_connection_failed_fallback_to_local", error=str(e))
-            # Fallback to local LoRA adapter reasoning
-            from .local_lora_backend import LocalLoRABackend
-            local_fallback = LocalLoRABackend()
-            res = await local_fallback.answer_question(image, question, context)
-            res.metadata["vllm_fallback"] = True
-            res.metadata["vllm_error"] = str(e)
-            return res
+            logger.warning("vllm_inference_failed")
+            raise RuntimeError("The configured vLLM provider did not complete inference") from e
 
     async def generate_caption(
         self,
@@ -150,6 +144,15 @@ class VLLMBackend(VLMBackend):
         question: str = "What changed between these two images?",
     ) -> VLMResponse:
         """Bi-temporal change analysis via vLLM."""
-        from .local_lora_backend import LocalLoRABackend
-        local_fallback = LocalLoRABackend()
-        return await local_fallback.analyze_change(image_before, image_after, question)
+        def rgb(image):
+            if image.ndim == 2:
+                return np.repeat(image[..., None], 3, axis=2)
+            if image.shape[2] == 1:
+                return np.repeat(image, 3, axis=2)
+            return image[..., :3]
+        before, after = rgb(image_before), rgb(image_after)
+        height = max(before.shape[0], after.shape[0])
+        combined = np.zeros((height, before.shape[1] + after.shape[1], 3), dtype=np.uint8)
+        combined[:before.shape[0], :before.shape[1]] = before
+        combined[:after.shape[0], before.shape[1]:] = after
+        return await self.answer_question(combined, question, context="Before image on the left; after image on the right. Compare only visible evidence.")

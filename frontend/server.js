@@ -9,8 +9,8 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 
-const PORT = parseInt(process.env.PORT || '3000', 10);
-const BACKEND_PORT = parseInt(process.env.BACKEND_PORT || '8000', 10);
+const PORT = parseInt(process.env.PORT || '3010', 10);
+const BACKEND_PORT = parseInt(process.env.BACKEND_PORT || '8010', 10);
 const BACKEND_HOST = process.env.BACKEND_HOST || '127.0.0.1';
 
 const ROOT_DIR = path.resolve(__dirname, '..');
@@ -50,6 +50,11 @@ function getCockpitHtml() {
 const server = http.createServer((req, res) => {
   const parsedUrl = url.parse(req.url, true);
   const pathname = parsedUrl.pathname || '/';
+  const allowed = pathname === '/' || pathname === '/app' || pathname === '/index.html' || pathname === '/bhuvision_preview.html' || pathname === '/manifest.json' || pathname === '/console' || pathname === '/legacy' || pathname.startsWith('/assets/') || pathname.startsWith('/api/') || pathname.startsWith('/static/') || pathname.startsWith('/docs/') || pathname.startsWith('/_next/');
+  if (!allowed || decodeURIComponent(pathname).split('/').some(part => part === '..' || part.startsWith('.'))) {
+    res.writeHead(404, {'Content-Type':'text/plain'});res.end('Not found');return;
+  }
+
 
   // 1. API Reverse Proxy -> Forward to FastAPI (port 8000)
   if (pathname.startsWith('/api/') || pathname === '/api' || pathname.startsWith('/docs') || pathname.startsWith('/openapi.json')) {

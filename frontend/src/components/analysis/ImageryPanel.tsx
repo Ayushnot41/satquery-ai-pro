@@ -139,12 +139,15 @@ function BiTemporalWipe({
 
   return (
     <div ref={containerRef} className="relative w-full h-full overflow-hidden cursor-ew-resize select-none"
-      onMouseDown={onMouseDown} onTouchStart={onTouchStart}>
+      onMouseDown={onMouseDown} onTouchStart={onTouchStart}
+      role="slider" tabIndex={0} aria-label="Before and after image comparison"
+      aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(wipePos)}
+      onKeyDown={event=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();setWipePos(value=>event.key==='Home'?0:event.key==='End'?100:Math.max(0,Math.min(100,value+(event.key==='ArrowRight'?5:-5))));}}}>
       {/* POST image (full width, below) */}
       {postUrl ? (
         <img src={postUrl} alt="Post Event" className="w-full h-full object-cover" />
       ) : (
-        <ImagePlaceholder gradient={postGradient} label="T2 — POST-EVENT" microLabel="Sentinel-2 2026-07-19" />
+        <ImagePlaceholder gradient={postGradient} label="T2 — POST-EVENT" microLabel="Sentinel-2 Not reported" />
       )}
 
       {/* PRE image clipped to left of wipe line */}
@@ -152,11 +155,11 @@ function BiTemporalWipe({
         className="absolute inset-0 overflow-hidden"
         style={{ width: `${wipePos}%` }}
       >
-        <div className="absolute inset-0" style={{ width: `${100 / (wipePos / 100)}%` }}>
+        <div className="absolute inset-0" style={{ width: `${100 / (Math.max(wipePos, 0.01) / 100)}%` }}>
           {preUrl ? (
             <img src={preUrl} alt="Pre Event" className="w-full h-full object-cover" />
           ) : (
-            <ImagePlaceholder gradient={preGradient} label="T1 – PRE-EVENT" microLabel="Sentinel-2 2026-07-12" />
+            <ImagePlaceholder gradient={preGradient} label="T1 – PRE-EVENT" microLabel="Sentinel-2 Not reported" />
           )}
         </div>
       </div>
@@ -240,7 +243,7 @@ function OpticalSarPanels({
         </div>
         <div className="absolute bottom-2 right-2 z-10">
           <span className="px-2 py-0.5 rounded bg-black/70 text-[10px] font-mono text-gray-300 border border-gray-700">
-            σ⁰(VV) = −22.4 dB
+            Backscatter value not reported
           </span>
         </div>
       </div>
@@ -331,7 +334,7 @@ export function ImageryPanel({ mode, imageUrls, isLoading = false }: ImageryPane
               <ImagePlaceholder
                 gradient="from-amber-900 via-orange-800 to-rose-900"
                 label="OPTICAL SCENE – NADIR VIEW"
-                microLabel="Cartosat-3 PAN · 0.28 m/px · EPSG:4326"
+                microLabel="Cartosat-3 PAN · Not reported · EPSG:4326"
               />
             )
           ) : mode === "bi_temporal" ? (
@@ -359,7 +362,7 @@ export function ImageryPanel({ mode, imageUrls, isLoading = false }: ImageryPane
         {!isLoading && (
           <div className="absolute bottom-3 left-3 z-20 pointer-events-none">
             <span className="px-2 py-0.5 rounded bg-black/60 text-[9px] font-mono text-gray-400 border border-gray-800">
-              MGRS · 44RKQ 6139 7209
+              Image preview · coordinates not shown
             </span>
           </div>
         )}
@@ -370,23 +373,23 @@ export function ImageryPanel({ mode, imageUrls, isLoading = false }: ImageryPane
         <div className="px-4 py-2 border-t border-[#1F2937] bg-[#0A0F1C] flex gap-4 flex-wrap text-[10px] font-mono text-gray-500">
           {mode === "single_image" && (
             <>
-              <span className="text-gray-400">Sensor: <span className="text-cyan-400">CARTOSAT-3</span></span>
-              <span>GSD: <span className="text-white">0.28 m/px</span></span>
-              <span>Band: <span className="text-white">PAN+4xVNIR</span></span>
+              <span className="text-gray-400">Sensor: <span className="text-cyan-400">Not reported</span></span>
+              <span>GSD: <span className="text-white">Not reported</span></span>
+              <span>Band: <span className="text-white">Not reported</span></span>
             </>
           )}
           {mode === "bi_temporal" && (
             <>
-              <span className="text-gray-400">T1: <span className="text-white">2026-07-12</span></span>
-              <span>T2: <span className="text-white">2026-07-19</span></span>
-              <span>Sensor: <span className="text-blue-400">SENTINEL-2</span></span>
-              <span>Interval: <span className="text-white">7 days</span></span>
+              <span className="text-gray-400">T1: <span className="text-white">Not reported</span></span>
+              <span>T2: <span className="text-white">Not reported</span></span>
+              <span>Sensor: <span className="text-blue-400">Not reported</span></span>
+              <span>Interval: <span className="text-white">Not reported</span></span>
             </>
           )}
           {mode === "optical_sar" && (
             <>
-              <span className="text-gray-400">Optical: <span className="text-cyan-400">SENTINEL-2 MSI</span></span>
-              <span>Radar: <span className="text-purple-400">SENTINEL-1 C-BAND</span></span>
+              <span className="text-gray-400">Optical: <span className="text-cyan-400">Not reported</span></span>
+              <span>Radar: <span className="text-purple-400">Not reported</span></span>
               <span>Pol: <span className="text-white">VV+VH</span></span>
             </>
           )}

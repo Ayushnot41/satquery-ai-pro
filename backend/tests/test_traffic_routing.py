@@ -7,6 +7,7 @@ from app.main import app
 async def test_traffic_flow_procedural():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         res = await client.get("/api/traffic/flow", params={"lat": 26.1445, "lon": 91.7362, "radius_km": 5.0})
         assert res.status_code == 200
         data = res.json()
@@ -18,6 +19,7 @@ async def test_traffic_flow_procedural():
 async def test_evacuation_corridor():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         res = await client.post("/api/traffic/evacuation-corridor", params={
             "origin_lat": 26.1445,
             "origin_lon": 91.7362,
@@ -35,6 +37,7 @@ async def test_evacuation_corridor():
 async def test_turn_by_turn_directions():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post('/api/auth/guest-token', json={})
         res = await client.post("/api/traffic/directions", params={
             "origin_lat": 26.1445,
             "origin_lon": 91.7362,

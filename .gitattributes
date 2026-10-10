@@ -1,0 +1,27 @@
+# Preserve the exact original media and README bytes across operating systems.
+/README.md -text
+/assets/agent_debate_matrix_3d.svg -text
+/assets/architecture_3d_pipeline.svg -text
+/assets/bhuvision_3d_banner.svg -text
+/assets/demo-construction-after.jpg -text
+/assets/demo-construction-after.png -text
+/assets/demo-construction-before.jpg -text
+/assets/demo-construction-before.png -text
+/assets/demo-flood-post-sar.jpg -text
+/assets/demo-flood-post-sar.png -text
+/assets/demo-flood-pre-optical.jpg -text
+/assets/demo-flood-pre-optical.png -text
+/assets/earth_3d_orbit_constellation.svg -text
+/assets/multi_agent_got_council.svg -text
+/assets/sar_3d_backscatter_mesh.svg -text
+/assets/sar_radar_physics_spectrum.svg -text
+/assets/temporal_bitemporal_3d_cockpit.svg -text
+/backend/checkpoints/best_model.pt -text
+/backend/checkpoints/vqa_lora_experiment_01/README.md -text
+/backend/checkpoints/vqa_lora_experiment_01/adapter_model.safetensors -text
+/backend/checkpoints/vqa_lora_experiment_01/best/README.md -text
+/backend/checkpoints/vqa_lora_experiment_01/best/adapter_model.safetensors -text
+/docs/BHUVISION_PRODUCTION_DEPLOYMENT_MANUAL.pdf -text
+/frontend/public/assets/demo-flood-post-sar.png -text
+/frontend/public/assets/demo-live-weather.png -text
+/frontend/public/assets/demo-past-baseline.png -text

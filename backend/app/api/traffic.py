@@ -10,7 +10,8 @@ from typing import List, Dict, Any, Optional
 import math
 import random
 
-router = APIRouter(prefix="/traffic", tags=["Traffic & Evacuation"])
+from ..core.provenance import SimulationRoute
+router = APIRouter(route_class=SimulationRoute, prefix="/traffic", tags=["Traffic & Evacuation"])
 
 
 class TrafficSegment(BaseModel):

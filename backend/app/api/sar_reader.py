@@ -15,13 +15,14 @@ from __future__ import annotations
 import math
 import random
 from typing import Any, Dict, List, Optional
+from ..core.provenance import SimulationRoute
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
 from ..geospatial.insar import InSARProcessor
 from ..geospatial.sar import SARProcessor, calibrate_to_db, apply_lee_filter
 
-router = APIRouter(prefix="/sar-reader", tags=["SAR Reader & Radar Physics"])
+router = APIRouter(route_class=SimulationRoute, prefix="/sar-reader", tags=["SAR Reader & Radar Physics"])
 
 insar_engine = InSARProcessor()
 sar_engine = SARProcessor()

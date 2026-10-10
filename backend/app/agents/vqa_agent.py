@@ -84,13 +84,5 @@ class VQAAgent(AgentBase):
             return result
 
         except Exception as e:
-            self._trace_error(trace, f"VQA failed: {str(e)}")
-            clean_ans = (
-                "Multi-spectral imagery analysis confirms surface variance across the surveyed coordinate bounds, "
-                "with optical contrast and spectral reflectance consistent with active site features."
-            )
-            return VQAResult(
-                answer=clean_ans,
-                model_name=getattr(self.vlm, "_model", "gateway"),
-                model_version="domain_synthesis",
-            )
+            self._trace_error(trace, "Vision provider failed. No answer was produced.")
+            raise RuntimeError("Vision provider failed. Check configuration and retry.") from e
