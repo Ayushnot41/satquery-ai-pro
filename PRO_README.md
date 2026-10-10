@@ -80,6 +80,11 @@ SMTP for email verification/password reset, or a valid Google client ID for
 Google sign-in. Optional phone verification requires Twilio. Production
 investigations require a verified account.
 
+Google and phone are independent signup/sign-in choices. Phone-only accounts do
+not need email. SMS uses Twilio Verify and stays disabled until `SMS_ENABLED=true`
+and a Verify service plus credentials are configured. See
+[the step-by-step authentication and free preview guide](docs/AUTHENTICATION_SETUP.md).
+
 For analysis of uploaded imagery, set `VLM_BACKEND=gateway` and a valid
 `OPENROUTER_API_KEY`, or configure the supported vLLM endpoint. Provider
 failures return an error instead of a fabricated successful answer. Demo

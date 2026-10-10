@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     twilio_account_sid: str | None = None
     twilio_auth_token: str | None = None
     twilio_from: str | None = None
+    sms_enabled: bool = False
+    twilio_api_key: str | None = None
+    twilio_api_secret: str | None = None
+    twilio_verify_service_sid: str | None = None
 
     # --- Primary LLM Router: OpenRouter ---
     openrouter_api_key: str | None = None

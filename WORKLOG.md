@@ -121,3 +121,12 @@ and CI Test Suite. PostgreSQL smoke passed in CI. API readiness remains healthy.
 Original linked D: Git metadata access recovered; retain its history alongside
 the published source snapshot. No original managed-worktree pointer was changed.
 Live preview and provider/hosting limitations are recorded in docs/VERIFICATION.md.
+# Independent authentication follow-up — 2026-10-10
+
+Added phone-first signup/login with nullable email, stable identity references,
+Twilio Verify adapter, browser-bound OTPs, single-use completion, expiry and rate
+limits. Google sign-in now uses a single-use nonce and stable subject lookup.
+Updated login/settings UI, provider configuration, and an easy setup guide.
+119 backend tests, the optimized frontend build, and preservation pass; local
+browser phone signup passes with a synthetic code. Live provider credentials are
+absent, so Google/Twilio remain inactive. No real SMS or paid hosting was enabled.

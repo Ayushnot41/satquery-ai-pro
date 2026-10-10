@@ -44,10 +44,12 @@ def test_expired_session_rejected():
 def test_verification_is_single_use_and_no_magic_otp():
     with TestClient(app) as client:
         email,data=account(client)
-        key=f'phone:{data["user"]["id"]}:+919876543210'
-        make_challenge(key,email,'845029',300)
-        assert client.post('/api/auth/otp/verify',json={'phone':'+919876543210','otp':'123456'}).status_code==400
-        body={'phone':'+919876543210','otp':'845029'}
+        phone='+1555'+str(int(uuid.uuid4().hex[:7],16)).zfill(9)
+        sent=client.post('/api/auth/otp/send',json={'phone':phone}).json()
+        code=sent['development_code']
+        wrong=str((int(code)+1)%1000000).zfill(6)
+        assert client.post('/api/auth/otp/verify',json={'phone':phone,'otp':wrong}).status_code==400
+        body={'phone':phone,'otp':code}
         first=client.post('/api/auth/otp/verify',json=body)
         assert first.status_code==200
         assert first.json()['user']['clearance_level']=='PUBLIC'
@@ -60,11 +62,13 @@ def test_verification_is_single_use_and_no_magic_otp():
 def test_otp_attempt_limit_and_expiry():
     with TestClient(app) as client:
         email,data=account(client)
-        key=f'phone:{data["user"]["id"]}:+919876543210'
-        make_challenge(key,email,'845029',300)
+        phone='+1555'+str(int(uuid.uuid4().hex[:7],16)).zfill(9)
+        sent=client.post('/api/auth/otp/send',json={'phone':phone}).json()
+        code=sent['development_code']
+        wrong=str((int(code)+1)%1000000).zfill(6)
         for _ in range(5):
-            assert client.post('/api/auth/otp/verify',json={'phone':'+919876543210','otp':'000000'}).status_code==400
-        assert client.post('/api/auth/otp/verify',json={'phone':'+919876543210','otp':'845029'}).status_code==400
+            assert client.post('/api/auth/otp/verify',json={'phone':phone,'otp':wrong}).status_code==400
+        assert client.post('/api/auth/otp/verify',json={'phone':phone,'otp':code}).status_code==400
 
 def test_password_reset_revokes_sessions():
     with TestClient(app) as client:

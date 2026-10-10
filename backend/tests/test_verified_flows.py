@@ -3,6 +3,7 @@ import numpy as np
 from fastapi.testclient import TestClient
 from app.main import app
 from app.api.auth import PHONES, digest
+from app.core.database import DurableStore
 from app.geospatial.export import grounded_features
 from app.agents.visual_grounding import VisualGroundingAgent
 from app.schemas.agents import ChangeRegion, GroundingResult
@@ -35,11 +36,14 @@ def test_phone_login_single_use_and_no_cross_account_rebinding():
         verified = first.post('/api/auth/otp/verify', json={'phone':phone,'otp':sent['development_code']})
         assert verified.status_code == 200
         first.post('/api/auth/logout', json={})
+        sends=DurableStore('phone_sends',global_scope=True)
+        pending=sends[digest(phone)];pending['sent_at']-=31;sends[digest(phone)]=pending
         sent = first.post('/api/auth/otp/send', json={'phone':phone,'purpose':'login'}).json()
         payload={'phone':phone,'otp':sent['development_code'],'purpose':'login'}
         assert first.post('/api/auth/otp/verify',json=payload).json()['user']['email'] == email
         assert first.post('/api/auth/otp/verify',json=payload).status_code == 400
         account(second)
+        pending=sends[digest(phone)];pending['sent_at']-=31;sends[digest(phone)]=pending
         other=second.post('/api/auth/otp/send',json={'phone':phone}).json()
         assert second.post('/api/auth/otp/verify',json={'phone':phone,'otp':other['development_code']}).status_code == 409
         assert PHONES[digest(phone)]['email'] == email

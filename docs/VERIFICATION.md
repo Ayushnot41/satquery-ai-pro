@@ -1,5 +1,27 @@
 # Verification record — 2026-10-10
 
+## Independent Google and phone signup follow-up
+
+- Full backend suite: **119 passed**, six expected warnings. The 29 focused
+  authentication/regression tests also passed after retaining the original route
+  wrappers for compatibility.
+- Optimized Next.js build and TypeScript validation passed.
+- Browser: a local-only synthetic OTP created a phone-only account, issued a
+  session, and displayed Phone verified / Email not required. No browser console
+  errors were observed. The 390 px viewport had no horizontal document overflow.
+  Screenshot: `phone-signup-verified.jpg` (test account; no real SMS).
+- Preservation check passes. Added PostgreSQL CI coverage for phone signup,
+  sessions, and legacy Google subject lookup; see the current CI run for its result.
+- Google and Twilio credentials are not configured. External Google sign-in and
+  real SMS delivery remain untested and inactive. Mock-provider tests do not
+  establish live provider readiness. The public tunnel remains sample-only.
+- SMS paid delivery defaults off. Existing accounts/session references remain
+  readable; pending OTPs from the previous implementation must be requested again.
+- Self-service phone replacement/recovery and merging separate accounts are not
+  implemented. Do not claim a fully audited production identity service.
+
+Setup: `AUTHENTICATION_SETUP.md`.
+
 ## Confirmed locally
 
 - Backend: **103 passed**, six warnings (Starlette/AnyIO deprecation and expected

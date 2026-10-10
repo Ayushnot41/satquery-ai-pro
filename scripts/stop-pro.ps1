@@ -1,6 +1,8 @@
+param([switch]$KeepTunnel)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $processFiles = @((Join-Path $projectRoot '.runtime/tunnel-process.json'), (Join-Path $projectRoot '.runtime/processes.json'))
+if ($KeepTunnel) { $processFiles = @((Join-Path $projectRoot '.runtime/processes.json')) }
 foreach ($processFile in $processFiles) {
 if (-not (Test-Path -LiteralPath $processFile)) { continue }
 $remaining = @()

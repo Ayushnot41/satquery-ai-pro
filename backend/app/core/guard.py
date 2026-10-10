@@ -65,8 +65,8 @@ class SecurityBoundary:
                 rate_key = f'{client[0]}:{"auth" if path.startswith("/api/auth/") else user["id"] if user else "anonymous"}'
                 if not rate_allowed(rate_key, limit=limit):
                     return await reject(429, 'Too many requests. Please wait a minute before retrying.')
-                if user and settings.environment == 'production' and not user.get('email_verified') and not path.startswith('/api/auth/'):
-                    return await reject(403, 'Verify your email before using this workspace.')
+                if user and settings.environment == 'production' and not (user.get('email_verified') or user.get('phone_verified')) and not path.startswith('/api/auth/'):
+                    return await reject(403, 'Verify your email or phone before using this workspace.')
         if path.startswith('/static/uploads/') and not user:
             return await reject(401, 'Sign in to view this image.')
         max_bytes = settings.max_upload_bytes + 1024 * 1024 if path == '/api/imagery/upload' else 1024 * 1024

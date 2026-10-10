@@ -4,7 +4,6 @@ import hashlib, hmac, secrets, smtplib, ssl, time, uuid
 from email.message import EmailMessage
 from datetime import datetime, timezone
 from typing import Literal
-import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field, field_validator
 from pwdlib import PasswordHash
@@ -14,21 +13,26 @@ from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 from ..core.config import settings
 from ..core.database import DurableStore, Record, engine
+from ..core.identity import account_key, reference_key, identity_transaction, record_conditions, read_record
+from ..core.sms import development_codes_enabled, sms_configured
 
 router = APIRouter(prefix='/auth', tags=['Authentication & Security Clearance'])
 USERS = DurableStore('users', global_scope=True)
 SESSIONS = DurableStore('sessions', global_scope=True)
 CHALLENGES = DurableStore('challenges', global_scope=True)
 PHONES = DurableStore('verified_phones', global_scope=True)
+GOOGLE_IDENTITIES = DurableStore('google_identities', global_scope=True)
 hasher = PasswordHash.recommended()
 DUMMY_HASH = hasher.hash('timing-normalization-not-a-user-password')
 COOKIE = 'satquery_session'
+GOOGLE_COOKIE = 'satquery_google_nonce'
+OTP_COOKIE = 'satquery_otp'
 
 def digest(value: str) -> str:
     return hmac.new(settings.auth_pepper.encode(), value.encode(), hashlib.sha256).hexdigest()
 
 def public_user(user):
-    return {k: v for k, v in user.items() if k not in {'password_hash', 'google_sub'}}
+    return {k: v for k, v in user.items() if k not in {'password_hash', 'google_sub', '_key'}}
 
 def session_token(request: Request) -> str:
     auth = request.headers.get('authorization', '')
@@ -39,7 +43,7 @@ def resolve_user(request: Request):
     session = SESSIONS.get(digest(token)) if token else None
     if not session or session['expires'] <= time.time():
         return None
-    return USERS.get(session['email'])
+    return USERS.get(reference_key(session))
 
 def require_user(request: Request):
     user = resolve_user(request)
@@ -47,13 +51,20 @@ def require_user(request: Request):
         raise HTTPException(401, 'Sign in to access this workspace.')
     return user
 
-def create_user(email, name, **extra):
+def new_user(email, name, **extra):
     user = dict(id=uuid.uuid4().hex, email=email, name=name, organization='', phone='', role='Analyst',
                 clearance_level='PUBLIC', email_verified=False, phone_verified=False, google_verified=False,
-                auth_providers=['email'], created_at=datetime.now(timezone.utc).isoformat(), guest=False, **extra)
+                auth_providers=['email'], created_at=datetime.now(timezone.utc).isoformat(), guest=False)
+    user.update(extra)
+    user['_key'] = email or 'id:' + user['id']
+    return user
+
+
+def create_user(email, name, **extra):
+    user = new_user(email, name, **extra)
     try:
         with Session(engine) as db, db.begin():
-            db.add(Record(namespace='users', owner='system', key=email, value=user))
+            db.add(Record(namespace='users', owner='system', key=account_key(user), value=user))
     except IntegrityError:
         raise HTTPException(409, 'Account already exists. Sign in or reset your password.')
     return user
@@ -61,7 +72,7 @@ def create_user(email, name, **extra):
 def issue_session(user, response: Response):
     token = secrets.token_urlsafe(48)
     seconds = 3600 if user.get('guest') else settings.session_hours * 3600
-    SESSIONS[digest(token)] = {'email': user['email'], 'expires': time.time() + seconds}
+    SESSIONS[digest(token)] = {'user_key': account_key(user), 'expires': time.time() + seconds, 'authenticated_at': time.time()}
     response.set_cookie(COOKIE, token, max_age=seconds, httponly=True, secure=settings.cookie_secure, samesite='lax', path='/')
     response.headers['Cache-Control'] = 'no-store'
     return {'access_token': token, 'token_type': 'Bearer', 'expires_in_seconds': seconds, 'user': public_user(user)}
@@ -98,10 +109,19 @@ class SendOtpRequest(BaseModel):
     phone: str = Field(pattern=r'^\+[1-9][0-9]{7,14}$')
     purpose: Literal['login', 'verification', 'clearance'] = 'verification'
 
-class VerifyOtpRequest(BaseModel):
-    phone: str = Field(pattern=r'^\+[1-9][0-9]{7,14}$')
+    @field_validator('phone', mode='before')
+    @classmethod
+    def normalize_phone(cls, value):
+        import re
+        return re.sub(r'[\s()\-]', '', value) if isinstance(value, str) else value
+
+class VerifyOtpRequest(SendOtpRequest):
     otp: str = Field(pattern=r'^\d{6}$')
     purpose: Literal['login', 'verification'] | None = None
+
+
+def set_flow_cookie(response, name, value, seconds=300):
+    response.set_cookie(name, value, max_age=seconds, httponly=True, secure=settings.cookie_secure, samesite='strict', path='/api/auth')
 
 class EmailChallengeRequest(BaseModel):
     email: str = Field(min_length=5, max_length=120)
@@ -159,8 +179,8 @@ def send_email(email, subject, token):
 def auth_config():
     return {'public_preview': settings.environment == 'preview',
             'google_client_id': settings.google_client_id if settings.environment != 'preview' else None, 'demo_guest': settings.allow_demo_guest and settings.environment != 'production',
-            'email_delivery': bool(settings.smtp_host), 'sms_delivery': bool(settings.twilio_account_sid),
-            'development_codes': settings.development_verification_codes and settings.environment != 'production'}
+            'email_delivery': bool(settings.smtp_host), 'sms_delivery': sms_configured() and settings.environment != 'preview',
+            'development_codes': development_codes_enabled()}
 
 @router.post('/register')
 def register_with_email(req: EmailRegisterRequest, response: Response):
@@ -187,26 +207,55 @@ def guest_token(response: Response):
     USERS[email] = user
     return issue_session(user, response)
 
+@router.post('/google/nonce')
+def google_nonce(request: Request, response: Response):
+    if not settings.google_client_id:
+        raise HTTPException(503, 'Google sign-in is not configured.')
+    old = request.cookies.get(GOOGLE_COOKIE)
+    if old:
+        CHALLENGES.pop('google:' + digest(old), None)
+    nonce = secrets.token_urlsafe(32)
+    make_challenge('google:' + digest(nonce), '', nonce, 300)
+    set_flow_cookie(response, GOOGLE_COOKIE, nonce)
+    return {'nonce': nonce}
+
+
 @router.post('/google')
-async def login_with_google(req: GoogleAuthRequest, response: Response):
+async def login_with_google(req: GoogleAuthRequest, request: Request, response: Response):
     if not settings.google_client_id:
         raise HTTPException(503, 'Google sign-in is not configured.')
     from google.oauth2 import id_token
     from google.auth.transport.requests import Request as GoogleRequest
     try:
         info = await run_in_threadpool(id_token.verify_oauth2_token, req.credential, GoogleRequest(), settings.google_client_id)
-        if not info.get('email_verified') or not info.get('sub'):
+        nonce = request.cookies.get(GOOGLE_COOKIE, '')
+        if not info.get('email_verified') or not info.get('sub') or not info.get('email'):
             raise ValueError('Unverified identity')
+        if not nonce or not isinstance(info.get('nonce'), str) or not hmac.compare_digest(nonce, info['nonce']):
+            raise ValueError('Invalid login nonce')
     except Exception:
         raise HTTPException(401, 'Google identity could not be verified.')
-    email = info['email'].lower()
-    user = USERS.get(email)
-    if user and user.get('google_sub') != info['sub']:
-        raise HTTPException(409, 'An account exists with this email. Use its original sign-in method.')
-    if not user:
-        user = create_user(email, info.get('name', 'Analyst'), google_sub=info['sub'])
-        user.update(email_verified=True, google_verified=True, auth_providers=['google'])
-        USERS[email] = user
+    consume_challenge('google:' + digest(nonce), nonce)
+    response.delete_cookie(GOOGLE_COOKIE, path='/api/auth')
+    email, subject = info['email'].lower(), info['sub']
+    # Google subject is stable even when the Google account's email changes.
+    try:
+        with identity_transaction('google:' + subject) as conn:
+            binding = read_record(conn, 'google_identities', subject)
+            user = read_record(conn, 'users', reference_key(binding)) if binding else None
+            if not user:
+                user = conn.execute(select(Record.value).where(Record.namespace == 'users', Record.owner == 'system', Record.value['google_sub'].as_string() == subject)).scalar_one_or_none()
+            if not user:
+                if read_record(conn, 'users', email):
+                    raise HTTPException(409, 'An account exists with this email. Use its original sign-in method.')
+                authoritative_email = email.endswith('@gmail.com') or bool(info.get('hd'))
+                user = new_user(email, info.get('name') or 'Analyst', google_sub=subject,
+                                email_verified=authoritative_email, google_verified=True, auth_providers=['google'])
+                conn.execute(Record.__table__.insert().values(namespace='users', owner='system', key=account_key(user), value=user))
+            if not binding:
+                conn.execute(Record.__table__.insert().values(namespace='google_identities', owner='system', key=subject, value={'user_key': account_key(user)}))
+    except IntegrityError as exc:
+        raise HTTPException(409, 'This account was created concurrently. Try signing in again.') from exc
     return issue_session(user, response)
 
 @router.post('/email/send')
@@ -214,16 +263,18 @@ def send_email_verification(request: Request):
     user = require_user(request)
     if user.get('guest'):
         raise HTTPException(403, 'Create an account to verify an email address.')
+    if not user.get('email'):
+        raise HTTPException(400, 'This account uses phone sign-in and has no email address to verify.')
     token = secrets.token_urlsafe(32)
     delivery = send_email(user['email'], 'Verify your Satquery AI email', token)
-    make_challenge('email:' + digest(token), user['email'], token)
+    make_challenge('email:' + digest(token), account_key(user), token)
     return {'message': 'Verification requested.', **delivery}
 
 @router.post('/email/verify')
 def verify_email(req: VerifyEmailRequest, request: Request):
     user = require_user(request)
     challenge = CHALLENGES.get('email:' + digest(req.token))
-    if not challenge or challenge['email'] != user['email']:
+    if not challenge or challenge['email'] != account_key(user):
         raise HTTPException(400, 'Invalid verification code.')
     email = consume_challenge('email:' + digest(req.token), req.token)
     user = USERS[email]
@@ -250,65 +301,22 @@ def reset_password(req: PasswordResetRequest, response: Response):
     user['password_hash'] = hasher.hash(req.password)
     USERS[email] = user
     for key in list(SESSIONS):
-        if SESSIONS[key]['email'] == email:
+        if reference_key(SESSIONS[key]) == email:
             del SESSIONS[key]
     response.delete_cookie(COOKIE, path='/')
     return {'message': 'Password updated. Sign in again on each device.'}
 
 @router.post('/otp/send')
-async def send_phone_otp(req: SendOtpRequest, request: Request):
-    if req.purpose == 'login':
-        binding = PHONES.get(digest(req.phone))
-        user = USERS.get(binding['email']) if binding else None
-        if not user or not user.get('phone_verified') or user.get('phone') != req.phone:
-            return {'message': 'If this phone is verified on an account, a code has been sent.', 'expires_in_seconds': 300}
-    else:
-        user = require_user(request)
-    if user.get('guest'):
-        raise HTTPException(403, 'Create an account first.')
-    code = f'{secrets.randbelow(1000000):06d}'
-    delivery = {}
-    if settings.development_verification_codes and settings.environment != 'production':
-        delivery['development_code'] = code
-    elif settings.twilio_account_sid and settings.twilio_auth_token and settings.twilio_from:
-        async with httpx.AsyncClient(timeout=15) as client:
-            res = await client.post(f'https://api.twilio.com/2010-04-01/Accounts/{settings.twilio_account_sid}/Messages.json',
-                auth=(settings.twilio_account_sid, settings.twilio_auth_token), data={'From': settings.twilio_from, 'To': req.phone, 'Body': f'Satquery AI code: {code}. Expires in 5 minutes.'})
-        if res.status_code >= 300:
-            raise HTTPException(503, 'SMS delivery is temporarily unavailable.')
-    else:
-        raise HTTPException(503, 'SMS delivery is not configured.')
-    key = f'phone-login:{digest(req.phone)}' if req.purpose == 'login' else f'phone:{user["id"]}:{req.phone}'
-    make_challenge(key, user['email'], code, 300)
-    return {'message': 'Verification code requested.', 'expires_in_seconds': 300, **delivery}
+async def send_phone_otp(req: SendOtpRequest, request: Request, response: Response):
+    from .phone import send_phone_otp as send_code
+    return await send_code(req, request, response)
+
 
 @router.post('/otp/verify')
-def verify_phone_otp(req: VerifyOtpRequest, request: Request, response: Response):
-    if req.purpose == 'login' or (req.purpose is None and resolve_user(request) is None):
-        email = consume_challenge(f'phone-login:{digest(req.phone)}', req.otp)
-        binding = PHONES.get(digest(req.phone))
-        user = USERS.get(email)
-        if not binding or binding['email'] != email or not user or user.get('phone') != req.phone or not user.get('phone_verified'):
-            raise HTTPException(400, 'Phone sign-in is no longer available. Sign in with email.')
-        return {'verified': True, **issue_session(user, response)}
-    user = require_user(request)
-    consume_challenge(f'phone:{user["id"]}:{req.phone}', req.otp)
-    old_phone = user.get('phone') if user.get('phone_verified') else None
-    user.update(phone=req.phone, phone_verified=True)
-    try:
-        with Session(engine) as db, db.begin():
-            binding_key = ('verified_phones', 'system', digest(req.phone))
-            binding = db.get(Record, binding_key, with_for_update=True)
-            if binding and binding.value['email'] != user['email']:
-                raise HTTPException(409, 'This phone is already linked to an account.')
-            if not binding:
-                db.add(Record(namespace=binding_key[0], owner='system', key=binding_key[2], value={'email':user['email']}))
-            if old_phone and old_phone != req.phone:
-                db.execute(delete(Record).where(Record.namespace=='verified_phones', Record.owner=='system', Record.key==digest(old_phone)))
-            db.execute(update(Record).where(Record.namespace=='users', Record.owner=='system', Record.key==user['email']).values(value=user))
-    except IntegrityError:
-        raise HTTPException(409, 'This phone was linked concurrently. Request a new code.')
-    return {'verified': True, **issue_session(user, response)}
+async def verify_phone_otp(req: VerifyOtpRequest, request: Request, response: Response):
+    from .phone import verify_phone_otp as verify_code
+    return await verify_code(req, request, response)
+
 
 @router.get('/me')
 def get_current_user_profile(request: Request):
